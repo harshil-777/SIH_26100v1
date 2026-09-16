@@ -1,0 +1,7 @@
+tender_id,title,department,category,estimated_value_inr,msme_reserved,mii_local_content_threshold_pct,requires_oem_authorization,epfo_applicable_employee_threshold,submission_deadline
+T2026-0001,Supply of Laptops and Desktops for CPSE Offices,Ministry of Electronics and IT,Goods,45000000,TRUE,50,TRUE,20,2026-10-15
+T2026-0002,Annual Maintenance Contract for HVAC Systems,CPWD,Services,8000000,FALSE,0,FALSE,20,2026-10-05
+T2026-0003,Supply of Steel Office Furniture,DGS&D,Goods,12000000,TRUE,50,FALSE,20,2026-10-20
+T2026-0004,IT Manpower Outsourcing Services,National Informatics Centre,Services,30000000,FALSE,0,FALSE,20,2026-11-01
+T2026-0005,Supply and Installation of Solar Water Heaters,Ministry of New and Renewable Energy,Goods,6000000,TRUE,60,FALSE,20,2026-10-25
+T2026-0006,Security Guard Services for Zonal Office,Indian Railways,Services,15000000,FALSE,0,FALSE,20,2026-11-10

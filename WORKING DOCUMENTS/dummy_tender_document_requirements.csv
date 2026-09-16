@@ -1,0 +1,24 @@
+requirement_id,tender_id,document_type,buyer_label,requirement_source,mandatory,notes
+DR001,T2026-0001,OEM_AUTHORIZATION_LETTER,Annexure VII - OEM Authorization Certificate,buyer_atc,TRUE,Hardware resale category; OEM must authorize this bidder specifically for this tender
+DR002,T2026-0001,MII_LOCAL_CONTENT_SELF_CERTIFICATE,Annexure IV - Make in India Self-Certification,system_template,TRUE,Standard MII and MSE Purchase Preference section of the GeM bid template
+DR003,T2026-0001,TURNOVER_CERTIFICATE_CA,Annexure III - CA-Certified Turnover Statement,buyer_selected_turnover_experience,TRUE,Buyer selected Turnover as an eligibility document at bid creation
+DR004,T2026-0001,EMD_EXEMPTION_PROOF,Annexure II - MSE/Startup EMD Exemption Certificate,system_template,FALSE,Mandatory only if the bidder claims MSE or Startup EMD exemption; Udyam or DPIIT certificate accepted as proof
+DR005,T2026-0002,PAST_EXPERIENCE_PROOF,Annexure B - Past Experience Proforma,buyer_selected_turnover_experience,TRUE,Work order plus CA-certified payment details for similar AMC contracts
+DR006,T2026-0002,EPFO_ESIC_COMPLIANCE_CERTIFICATE,Annexure D - Labour Law Compliance Undertaking,buyer_atc,TRUE,Labour law compliance clause for on-site service personnel
+DR007,T2026-0003,MII_LOCAL_CONTENT_SELF_CERTIFICATE,Annexure XI - Local Content Declaration,system_template,TRUE,Same semantic document as DR002 - this buyer just numbers its annexures differently
+DR008,T2026-0003,QUALITY_BIS_CERTIFICATE,Annexure VI - BIS Certification,buyer_atc,TRUE,BIS certification for steel furniture under the applicable Indian Standard
+DR009,T2026-0003,EMD_EXEMPTION_PROOF,Annexure XII - MSE Purchase Preference Undertaking,system_template,TRUE,Tender is MSE-reserved; Udyam certificate mandatory to establish eligibility, not just for EMD exemption
+DR010,T2026-0004,PAST_EXPERIENCE_PROOF,Annexure 5 - Past Performance Certificate,buyer_selected_turnover_experience,TRUE,
+DR011,T2026-0004,TURNOVER_CERTIFICATE_CA,Annexure IV - Annual Turnover Proof,buyer_selected_turnover_experience,TRUE,Note this buyer's "Annexure IV" is turnover proof - a different document than DR002's "Annexure IV" on a different tender
+DR012,T2026-0004,EPFO_ESIC_COMPLIANCE_CERTIFICATE,Annexure 9 - Statutory Compliance Undertaking (PF/ESIC),buyer_atc,TRUE,Mandatory for manpower outsourcing bids per GeM labour law compliance clause
+DR013,T2026-0005,MII_LOCAL_CONTENT_SELF_CERTIFICATE,Annexure-M - Format for Self Certification under Make in India Policy,system_template,TRUE,
+DR014,T2026-0005,QUALITY_BIS_CERTIFICATE,Annexure-K - MNRE Model Approval Certificate,buyer_atc,TRUE,MNRE-approved model/manufacturer certification for solar water heaters
+DR015,T2026-0005,EMD_EXEMPTION_PROOF,Annexure-D - MSE Purchase Preference Representation,system_template,TRUE,Tender is MSE-reserved
+DR016,T2026-0006,PAST_EXPERIENCE_PROOF,Annexure-C - Checklist cum Past Experience Proforma,buyer_selected_turnover_experience,TRUE,
+DR017,T2026-0006,EPFO_ESIC_COMPLIANCE_CERTIFICATE,Annexure-B - Labour Law Undertaking,buyer_atc,TRUE,
+DR018,T2026-0006,PSARA_LICENSE,Annexure-F - PSARA License Copy,buyer_atc,TRUE,Private Security Agencies (Regulation) Act licence, specific to security-guard service tenders
+
+# Note: buyer_label is the exact, human-readable name this specific tender's bid document/ATC gives the requirement.
+# document_type is what the rule engine actually reasons over. Compare DR002/DR007/DR013 (three different buyer_labels,
+# same document_type) and DR002/DR011 (same-looking "Annexure IV" label, two different document_types) - annexure
+# numbering is never a reliable key across GeM tenders, only within one buyer's own PDF.

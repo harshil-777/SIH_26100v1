@@ -1,0 +1,15 @@
+declaration_id,bid_id,bidder_id,tender_id,criterion_code,declared_value,declared_at,note
+DC001,BID-B001-T2026-0001,B001,T2026-0001,enterprise_category_self_declared,Small,2026-09-14,Matches both the Udyam adapter and the uploaded certificate
+DC002,BID-B001-T2026-0001,B001,T2026-0001,local_content_pct_self_declared,55,2026-09-14,Matches the MII certificate and the portal-verified estimate
+DC003,BID-B004-T2026-0001,B004,T2026-0001,enterprise_category_self_declared,Small,2026-09-14,Conflicts with both the uploaded Udyam certificate and the Udyam adapter, which read Medium - proforma / document / portal disagree three ways
+DC004,BID-B004-T2026-0001,B004,T2026-0001,local_content_pct_self_declared,48,2026-09-14,Consistent with the uploaded MII certificate
+DC005,BID-B006-T2026-0005,B006,T2026-0005,local_content_pct_self_declared,45,2026-09-14,Proforma states 45 percent; the bidder's own signed MII certificate states 40 percent; the portal-verified estimate is 38 percent - three different figures for one criterion
+DC006,BID-B008-T2026-0004,B008,T2026-0004,startup_status_self_declared,Recognized Startup,2026-09-14,Startup India adapter shows recognition expired since 2025-07-18
+DC007,BID-B012-T2026-0001,B012,T2026-0001,enterprise_category_self_declared,Small,2026-09-14,Matches the uploaded Udyam certificate
+DC008,BID-B012-T2026-0001,B012,T2026-0001,manufacturer_or_trader_self_declared,Manufacturer,2026-09-14,Bidder's own Udyam registration records its activity as "Trading - IT Hardware"; MSE Purchase Preference under the applicable GoI order is restricted to manufacturers (for goods) or service providers, not traders
+
+# Note: this table is the machine-readable form of what GeM calls the Bid Submission Confirmation Sheet / bidder's
+# evaluation proforma - the values the bidder self-declares against each eligibility criterion when submitting the
+# bid. The Tender Committee's real job (and this platform's core value) is checking these declared values against
+# (a) what the bidder's own uploaded documents actually say and (b) what the government portal independently
+# confirms - see the implementation guide, section 5.2.

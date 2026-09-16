@@ -1,0 +1,197 @@
+{
+  "note": "Synthetic mock adapter responses for dev/testing, per the problem statement's dummy dataset guidance. Each object mirrors the shape a real VerificationAdapter.verify() call would return for that source. All identifiers are fictitious.",
+  "bidders": [
+    {
+      "bidder_id": "B001",
+      "udyam": {"status": "valid", "registration_number": "UDYAM-MH-03-0012345", "category": "Small", "activity": "Manufacturing - Electronics", "date_of_registration": "2019-06-12", "confidence": 0.99, "verified_at": "2026-09-14T10:02:11Z"},
+      "gstn": {"status": "active", "gstin": "27AABCN1234A1Z5", "legal_name": "Nova Electro Systems Private Limited", "trade_name": "Nova Electro Systems", "return_filing_status": "up_to_date", "last_return_period": "2026-08", "confidence": 0.98, "verified_at": "2026-09-14T10:02:14Z"},
+      "pan": {"status": "valid", "pan": "AABCN1234A", "aadhaar_seeding_status": "linked", "confidence": 0.99, "verified_at": "2026-09-14T10:02:09Z"},
+      "mca21": {"status": "active", "cin": "U72900MH2015PTC260001", "company_name": "Nova Electro Systems Private Limited", "company_status": "Active", "confidence": 0.97, "verified_at": "2026-09-14T10:02:20Z"},
+      "epfo_esic": {"status": "active", "establishment_code": "MH/BAN/1234567/000", "establishment_status": "Active", "registered_employee_count": 45, "confidence": 0.95, "verified_at": "2026-09-14T10:02:25Z"},
+      "startup_india": {"status": "not_applicable"},
+      "nsic": {"status": "not_applicable"},
+      "debarment": {"status": "clear", "list_source": "internal_debarred_entities_registry", "confidence": 1.0, "verified_at": "2026-09-14T10:02:05Z"},
+      "mii_local_content": {"declared_pct": 55, "verified_pct_estimate": 55, "source": "BIS/DPIIT classification cross-check", "confidence": 0.9, "verified_at": "2026-09-14T10:02:30Z"},
+      "document_cross_check": [
+        {"doc_type": "udyam_certificate", "match": true, "confidence": 0.98},
+        {"doc_type": "gst_certificate", "match": true, "confidence": 0.97}
+      ]
+    },
+    {
+      "bidder_id": "B002",
+      "udyam": {"status": "valid", "registration_number": "UDYAM-KA-02-0023456", "category": "Small", "activity": "Manufacturing - Fabricated Metal Products", "date_of_registration": "2018-03-05", "confidence": 0.97, "verified_at": "2026-09-14T10:05:11Z"},
+      "gstn": {"status": "cancelled", "gstin": "29BBCPS5678K1Z2", "legal_name": "Bharat Steel Works", "trade_name": "Bharat Steel Works", "cancellation_date": "2026-04-18", "return_filing_status": "defaulted", "last_return_period": "2026-02", "confidence": 0.98, "verified_at": "2026-09-14T10:05:14Z"},
+      "pan": {"status": "valid", "pan": "BBCPS5678K", "aadhaar_seeding_status": "linked", "confidence": 0.98, "verified_at": "2026-09-14T10:05:09Z"},
+      "mca21": {"status": "active", "cin": "U27100KA2012PTC260002", "company_name": "Bharat Steel Works Private Limited", "company_status": "Active", "confidence": 0.96, "verified_at": "2026-09-14T10:05:20Z"},
+      "epfo_esic": {"status": "active", "establishment_code": "KA/BLR/2345678/000", "establishment_status": "Active", "registered_employee_count": 58, "confidence": 0.94, "verified_at": "2026-09-14T10:05:25Z"},
+      "startup_india": {"status": "not_applicable"},
+      "nsic": {"status": "not_applicable"},
+      "debarment": {"status": "clear", "list_source": "internal_debarred_entities_registry", "confidence": 1.0, "verified_at": "2026-09-14T10:05:05Z"},
+      "mii_local_content": {"declared_pct": 52, "verified_pct_estimate": 50, "source": "BIS/DPIIT classification cross-check", "confidence": 0.85, "verified_at": "2026-09-14T10:05:30Z"},
+      "document_cross_check": [
+        {"doc_type": "gst_certificate", "match": true, "confidence": 0.9}
+      ],
+      "mandatory_failure_reason": "GSTIN status is Cancelled as of 2026-04-18; return filing in default since 2026-02"
+    },
+    {
+      "bidder_id": "B003",
+      "udyam": {"status": "valid", "registration_number": "UDYAM-DL-01-0034567", "category": "Micro", "activity": "Trading", "date_of_registration": "2021-01-22", "confidence": 0.96, "verified_at": "2026-09-14T10:08:11Z"},
+      "gstn": {"status": "active", "gstin": "07ABCDE1234B1Z9", "legal_name": "Suresh Enterprises", "trade_name": "Suresh Enterprises", "return_filing_status": "up_to_date", "last_return_period": "2026-08", "confidence": 0.95, "verified_at": "2026-09-14T10:08:14Z"},
+      "pan": {"status": "invalid", "pan": "ABCDE1234B", "reason": "PAN not linked to Aadhaar / flagged invalid by source registry", "confidence": 0.97, "verified_at": "2026-09-14T10:08:09Z"},
+      "mca21": {"status": "not_applicable"},
+      "epfo_esic": {"status": "active", "establishment_code": "DL/NDL/3456789/000", "establishment_status": "Active", "registered_employee_count": 15, "confidence": 0.9, "verified_at": "2026-09-14T10:08:25Z"},
+      "startup_india": {"status": "not_applicable"},
+      "nsic": {"status": "not_applicable"},
+      "debarment": {"status": "clear", "confidence": 1.0, "verified_at": "2026-09-14T10:08:05Z"},
+      "mii_local_content": {"status": "not_applicable"},
+      "document_cross_check": [
+        {"doc_type": "pan_card", "match": false, "confidence": 0.6, "note": "Uploaded PAN card image does not match adapter response"}
+      ],
+      "mandatory_failure_reason": "PAN verification returned Invalid"
+    },
+    {
+      "bidder_id": "B004",
+      "udyam": {"status": "valid", "registration_number": "UDYAM-GJ-04-0045678", "category": "Medium", "activity": "Manufacturing - Electrical Equipment", "date_of_registration": "2017-11-09", "confidence": 0.97, "verified_at": "2026-09-14T10:11:11Z", "note": "Portal category is Medium; bid document self-declares Small"},
+      "gstn": {"status": "active", "gstin": "24CGTSL2345M1Z6", "legal_name": "Global Tech Solutions LLP", "trade_name": "Global Tech Solutions", "return_filing_status": "up_to_date", "last_return_period": "2026-08", "confidence": 0.97, "verified_at": "2026-09-14T10:11:14Z"},
+      "pan": {"status": "valid", "pan": "CGTSL2345M", "aadhaar_seeding_status": "linked", "confidence": 0.98, "verified_at": "2026-09-14T10:11:09Z"},
+      "mca21": {"status": "not_applicable", "note": "LLP - registered under the LLP Act, not a CIN"},
+      "epfo_esic": {"status": "active", "establishment_code": "GJ/AHM/4567890/000", "establishment_status": "Active", "registered_employee_count": 180, "confidence": 0.93, "verified_at": "2026-09-14T10:11:25Z"},
+      "startup_india": {"status": "not_applicable"},
+      "nsic": {"status": "not_applicable"},
+      "debarment": {"status": "clear", "confidence": 1.0, "verified_at": "2026-09-14T10:11:05Z"},
+      "mii_local_content": {"declared_pct": 48, "verified_pct_estimate": 46, "confidence": 0.82, "verified_at": "2026-09-14T10:11:30Z"},
+      "document_cross_check": [
+        {"doc_type": "udyam_certificate", "match": false, "confidence": 0.7, "note": "Certificate category field reads Medium; bid form declares Small"}
+      ],
+      "conditional_flag_reason": "Udyam category mismatch affects MSME-reservation eligibility for tender T2026-0001"
+    },
+    {
+      "bidder_id": "B005",
+      "udyam": {"status": "valid", "registration_number": "UDYAM-RJ-05-0056789", "category": "Small", "activity": "Manufacturing - Furniture", "date_of_registration": "2016-07-30", "confidence": 0.96, "verified_at": "2026-09-14T10:14:11Z"},
+      "gstn": {"status": "active", "gstin": "08DKFPL3456N1Z3", "legal_name": "Kiran Furnishers Private Limited", "trade_name": "Kiran Furnishers", "return_filing_status": "up_to_date", "last_return_period": "2026-08", "confidence": 0.97, "verified_at": "2026-09-14T10:14:14Z"},
+      "pan": {"status": "valid", "pan": "DKFPL3456N", "aadhaar_seeding_status": "linked", "confidence": 0.98, "verified_at": "2026-09-14T10:14:09Z"},
+      "mca21": {"status": "active", "cin": "U36100RJ2010PTC260005", "company_name": "Kiran Furnishers Private Limited", "company_status": "Active", "confidence": 0.96, "verified_at": "2026-09-14T10:14:20Z"},
+      "epfo_esic": {"status": "active", "establishment_code": "RJ/JAI/5678901/000", "establishment_status": "Active", "registered_employee_count": 35, "confidence": 0.92, "verified_at": "2026-09-14T10:14:25Z"},
+      "startup_india": {"status": "not_applicable"},
+      "nsic": {"status": "not_applicable"},
+      "debarment": {"status": "debarred", "list_source": "internal_debarred_entities_registry", "order_reference": "DGS&D/DEBAR/2025/0091", "debarment_period": "2025-06-01 to 2027-05-31", "confidence": 1.0, "verified_at": "2026-09-14T10:14:05Z"},
+      "mii_local_content": {"declared_pct": 58, "verified_pct_estimate": 57, "confidence": 0.88, "verified_at": "2026-09-14T10:14:30Z"},
+      "document_cross_check": [
+        {"doc_type": "udyam_certificate", "match": true, "confidence": 0.95}
+      ],
+      "mandatory_failure_reason": "Bidder appears on the debarred-entities registry, active until 2027-05-31"
+    },
+    {
+      "bidder_id": "B006",
+      "udyam": {"status": "valid", "registration_number": "UDYAM-RJ-06-0067890", "category": "Small", "activity": "Manufacturing - Renewable Energy Equipment", "date_of_registration": "2020-02-14", "confidence": 0.97, "verified_at": "2026-09-14T10:17:11Z"},
+      "gstn": {"status": "active", "gstin": "08ESTRP4567O1Z0", "legal_name": "SolarTech Renewables Private Limited", "trade_name": "SolarTech Renewables", "return_filing_status": "up_to_date", "last_return_period": "2026-08", "confidence": 0.97, "verified_at": "2026-09-14T10:17:14Z"},
+      "pan": {"status": "valid", "pan": "ESTRP4567O", "aadhaar_seeding_status": "linked", "confidence": 0.98, "verified_at": "2026-09-14T10:17:09Z"},
+      "mca21": {"status": "active", "cin": "U40106RJ2016PTC260006", "company_name": "SolarTech Renewables Private Limited", "company_status": "Active", "confidence": 0.96, "verified_at": "2026-09-14T10:17:20Z"},
+      "epfo_esic": {"status": "active", "establishment_code": "RJ/JOD/6789012/000", "establishment_status": "Active", "registered_employee_count": 50, "confidence": 0.93, "verified_at": "2026-09-14T10:17:25Z"},
+      "startup_india": {"status": "not_applicable"},
+      "nsic": {"status": "not_applicable"},
+      "debarment": {"status": "clear", "confidence": 1.0, "verified_at": "2026-09-14T10:17:05Z"},
+      "mii_local_content": {"declared_pct": 40, "verified_pct_estimate": 38, "source": "BIS/DPIIT classification cross-check", "confidence": 0.87, "verified_at": "2026-09-14T10:17:30Z"},
+      "document_cross_check": [
+        {"doc_type": "local_content_self_certificate", "match": true, "confidence": 0.9}
+      ],
+      "graded_failure_reason": "Declared and verified local content (approx. 38-40%) fall below the 60% Make in India threshold for tender T2026-0005"
+    },
+    {
+      "bidder_id": "B007",
+      "udyam": {"status": "not_found", "note": "No Udyam registration on file - not required for this service category"},
+      "gstn": {"status": "active", "gstin": "27FMMSP5678P1Z7", "legal_name": "Metro Manpower Services", "trade_name": "Metro Manpower Services", "return_filing_status": "up_to_date", "last_return_period": "2026-08", "confidence": 0.96, "verified_at": "2026-09-14T10:20:14Z"},
+      "pan": {"status": "valid", "pan": "FMMSP5678P", "aadhaar_seeding_status": "linked", "confidence": 0.98, "verified_at": "2026-09-14T10:20:09Z"},
+      "mca21": {"status": "not_applicable"},
+      "epfo_esic": {"status": "active", "establishment_code": "MH/PUN/7890123/000", "establishment_status": "Active", "registered_employee_count": 8, "confidence": 0.9, "verified_at": "2026-09-14T10:20:25Z", "note": "Registered employee count on EPFO file is 8"},
+      "startup_india": {"status": "not_applicable"},
+      "nsic": {"status": "not_applicable"},
+      "debarment": {"status": "clear", "confidence": 1.0, "verified_at": "2026-09-14T10:20:05Z"},
+      "mii_local_content": {"status": "not_applicable"},
+      "document_cross_check": [
+        {"doc_type": "epfo_compliance_certificate", "match": false, "confidence": 0.55, "note": "Bid declares 25 employees; EPFO establishment record shows 8 registered employees"}
+      ],
+      "conditional_flag_reason": "Declared employee strength (25) inconsistent with EPFO-registered employee count (8); needs manual review before qualifying for an IT manpower outsourcing tender"
+    },
+    {
+      "bidder_id": "B008",
+      "udyam": {"status": "valid", "registration_number": "UDYAM-KA-07-0078901", "category": "Small", "activity": "IT Services", "date_of_registration": "2019-09-01", "confidence": 0.96, "verified_at": "2026-09-14T10:23:11Z"},
+      "gstn": {"status": "active", "gstin": "29GASIP6789Q1Z4", "legal_name": "Aadhya Startups India Private Limited", "trade_name": "Aadhya Startups India", "return_filing_status": "up_to_date", "last_return_period": "2026-08", "confidence": 0.97, "verified_at": "2026-09-14T10:23:14Z"},
+      "pan": {"status": "valid", "pan": "GASIP6789Q", "aadhaar_seeding_status": "linked", "confidence": 0.98, "verified_at": "2026-09-14T10:23:09Z"},
+      "mca21": {"status": "active", "cin": "U72900KA2018PTC260008", "company_name": "Aadhya Startups India Private Limited", "company_status": "Active", "confidence": 0.95, "verified_at": "2026-09-14T10:23:20Z"},
+      "epfo_esic": {"status": "active", "establishment_code": "KA/MYS/8901234/000", "establishment_status": "Active", "registered_employee_count": 12, "confidence": 0.9, "verified_at": "2026-09-14T10:23:25Z"},
+      "startup_india": {"status": "expired", "recognition_number": "DIPP123456", "recognition_valid_until": "2025-07-18", "confidence": 0.96, "verified_at": "2026-09-14T10:23:30Z"},
+      "nsic": {"status": "not_applicable"},
+      "debarment": {"status": "clear", "confidence": 1.0, "verified_at": "2026-09-14T10:23:05Z"},
+      "mii_local_content": {"status": "not_applicable"},
+      "document_cross_check": [
+        {"doc_type": "dpiit_recognition_certificate", "match": true, "confidence": 0.9, "note": "Certificate uploaded matches portal record but validity has lapsed"}
+      ],
+      "conditional_flag_reason": "DPIIT Startup India recognition expired on 2025-07-18; startup-specific eligibility relaxations should not be applied"
+    },
+    {
+      "bidder_id": "B009",
+      "udyam": {"status": "not_found", "note": "Not required for this service category"},
+      "gstn": {"status": "active", "gstin": "33HOSSP7890R1Z1", "legal_name": "Om Security Services", "trade_name": "Om Security Services", "return_filing_status": "up_to_date", "last_return_period": "2026-08", "confidence": 0.97, "verified_at": "2026-09-14T10:26:14Z"},
+      "pan": {"status": "valid", "pan": "HOSSP7890R", "aadhaar_seeding_status": "linked", "confidence": 0.98, "verified_at": "2026-09-14T10:26:09Z"},
+      "mca21": {"status": "not_applicable"},
+      "epfo_esic": {"status": "active", "establishment_code": "TN/CHE/9012345/000", "establishment_status": "Active", "registered_employee_count": 90, "confidence": 0.93, "verified_at": "2026-09-14T10:26:25Z"},
+      "startup_india": {"status": "not_applicable"},
+      "nsic": {"status": "not_applicable"},
+      "debarment": {"status": "clear", "confidence": 1.0, "verified_at": "2026-09-14T10:26:05Z"},
+      "mii_local_content": {"status": "not_applicable"},
+      "document_cross_check": [
+        {"doc_type": "gst_certificate", "match": false, "confidence": 0.4, "note": "Uploaded certificate trade name reads 'Om Security & Facility Services'; GSTN adapter record reads 'Om Security Services'"}
+      ],
+      "conditional_flag_reason": "Trade-name mismatch between the uploaded GST certificate and the live GSTN record; recommend requesting the bidder's current certificate directly or flagging for document-authenticity review"
+    },
+    {
+      "bidder_id": "B010",
+      "udyam": {"status": "not_found", "note": "Large enterprise - not Udyam-eligible"},
+      "gstn": {"status": "active", "gstin": "29IPACL8901S1Z8", "legal_name": "Precision Auto Components Limited", "trade_name": "Precision Auto Components", "return_filing_status": "up_to_date", "last_return_period": "2026-08", "confidence": 0.98, "verified_at": "2026-09-14T10:29:14Z"},
+      "pan": {"status": "valid", "pan": "IPACL8901S", "aadhaar_seeding_status": "linked", "confidence": 0.98, "verified_at": "2026-09-14T10:29:09Z"},
+      "mca21": {"status": "active", "cin": "U29100KA2005PLC260010", "company_name": "Precision Auto Components Limited", "company_status": "Active", "confidence": 0.97, "verified_at": "2026-09-14T10:29:20Z"},
+      "epfo_esic": {"status": "active", "establishment_code": "KA/BLR/0123987/000", "establishment_status": "Active", "registered_employee_count": 320, "confidence": 0.95, "verified_at": "2026-09-14T10:29:25Z"},
+      "startup_india": {"status": "not_applicable"},
+      "nsic": {"status": "not_applicable"},
+      "debarment": {"status": "clear", "confidence": 1.0, "verified_at": "2026-09-14T10:29:05Z"},
+      "mii_local_content": {"declared_pct": 55, "verified_pct_estimate": 54, "confidence": 0.9, "verified_at": "2026-09-14T10:29:30Z"},
+      "document_cross_check": [
+        {"doc_type": "gst_certificate", "match": true, "confidence": 0.96}
+      ],
+      "business_rule_flag_reason": "All statutory checks pass, but enterprise category is Large and tender T2026-0003 is reserved for MSME bidders; ineligible on tender-specific eligibility rules, not on compliance grounds"
+    },
+    {
+      "bidder_id": "B011",
+      "udyam": {"status": "valid", "registration_number": "UDYAM-DL-08-0089012", "category": "Medium", "activity": "IT Services", "date_of_registration": "2015-05-19", "confidence": 0.97, "verified_at": "2026-09-14T10:32:11Z"},
+      "gstn": {"status": "active", "gstin": "07JDBIP9012T1Z5", "legal_name": "Digital Bharat Infotech Private Limited", "trade_name": "Digital Bharat Infotech", "return_filing_status": "up_to_date", "last_return_period": "2026-08", "confidence": 0.98, "verified_at": "2026-09-14T10:32:14Z"},
+      "pan": {"status": "valid", "pan": "JDBIP9012T", "aadhaar_seeding_status": "linked", "confidence": 0.99, "verified_at": "2026-09-14T10:32:09Z"},
+      "mca21": {"status": "active", "cin": "U72200DL2011PTC260011", "company_name": "Digital Bharat Infotech Private Limited", "company_status": "Active", "confidence": 0.97, "verified_at": "2026-09-14T10:32:20Z"},
+      "epfo_esic": {"status": "active", "establishment_code": "DL/SDL/0123456/000", "establishment_status": "Active", "registered_employee_count": 140, "confidence": 0.95, "verified_at": "2026-09-14T10:32:25Z"},
+      "startup_india": {"status": "not_applicable"},
+      "nsic": {"status": "not_applicable"},
+      "debarment": {"status": "clear", "confidence": 1.0, "verified_at": "2026-09-14T10:32:05Z"},
+      "mii_local_content": {"status": "not_applicable"},
+      "document_cross_check": [
+        {"doc_type": "gst_certificate", "match": true, "confidence": 0.97},
+        {"doc_type": "udyam_certificate", "match": true, "confidence": 0.96}
+      ]
+    },
+    {
+      "bidder_id": "B012",
+      "udyam": {"status": "valid", "registration_number": "UDYAM-MH-09-0090123", "category": "Small", "activity": "Trading - IT Hardware", "date_of_registration": "2020-10-03", "confidence": 0.96, "verified_at": "2026-09-14T10:35:11Z"},
+      "gstn": {"status": "active", "gstin": "27KSOTP0123U1Z2", "legal_name": "Sunrise OEM Traders", "trade_name": "Sunrise OEM Traders", "return_filing_status": "up_to_date", "last_return_period": "2026-08", "confidence": 0.96, "verified_at": "2026-09-14T10:35:14Z"},
+      "pan": {"status": "valid", "pan": "KSOTP0123U", "aadhaar_seeding_status": "linked", "confidence": 0.97, "verified_at": "2026-09-14T10:35:09Z"},
+      "mca21": {"status": "not_applicable"},
+      "epfo_esic": {"status": "active", "establishment_code": "MH/THN/1234098/000", "establishment_status": "Active", "registered_employee_count": 28, "confidence": 0.91, "verified_at": "2026-09-14T10:35:25Z"},
+      "startup_india": {"status": "not_applicable"},
+      "nsic": {"status": "valid", "registration_number": "NSIC-2019-004521", "valid_until": "2027-03-31", "confidence": 0.95, "verified_at": "2026-09-14T10:35:28Z"},
+      "debarment": {"status": "clear", "confidence": 1.0, "verified_at": "2026-09-14T10:35:05Z"},
+      "mii_local_content": {"status": "not_applicable"},
+      "document_cross_check": [
+        {"doc_type": "oem_authorization_letter", "match": false, "confidence": 0.0, "note": "Document not found in the bid submission; tender T2026-0001 requires OEM authorization for hardware resale bids"}
+      ],
+      "mandatory_failure_reason": "OEM authorization letter missing from the bid package, required for this tender category"
+    }
+  ]
+}
