@@ -173,7 +173,12 @@ DROP_ORDER = [
 
 
 def upgrade() -> None:
-    op.execute(SCHEMA_DDL)
+    # asyncpg's prepared-statement protocol rejects multiple commands in a single
+    # execute() call, so the DDL block must be split and run one statement at a time.
+    for statement in SCHEMA_DDL.split(";"):
+        statement = statement.strip()
+        if statement:
+            op.execute(statement + ";")
 
 
 def downgrade() -> None:
