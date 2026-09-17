@@ -122,11 +122,21 @@ def as_utc_datetime(value: str | None) -> datetime | None:
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
 
 
-def build_eligibility_rules(tender: dict[str, str]) -> dict[str, Any]:
-    """Derive the section 8 criteria blob from the tender's own policy columns.
+def build_eligibility_rules_typed(
+    *,
+    msme_reserved: bool,
+    mii_local_content_threshold_pct: Decimal | None,
+    epfo_applicable_employee_threshold: int | None,
+) -> dict[str, Any]:
+    """Derive the section 8 criteria blob from a tender's own policy flags.
 
-    The tenders CSV carries no rules column: the statutory mandatory set is constant and
-    the graded set is switched on by msme_reserved / MII threshold / OEM / EPFO columns.
+    The 4 mandatory criteria are constant (BUILD_SPEC.md section 8's literal example).
+    The graded set is switched on by msme_reserved / MII threshold / EPFO threshold.
+
+    OEM authorization is deliberately not a separate graded criterion: every tender that
+    sets requires_oem_authorization also seeds OEM_AUTHORIZATION_LETTER as a *mandatory*
+    tender_document_requirements row, so document_completeness already owns that signal.
+    A parallel graded criterion would just be a redundant, perfectly-correlated copy of it.
     """
     criteria: list[dict[str, Any]] = [
         {
@@ -151,7 +161,7 @@ def build_eligibility_rules(tender: dict[str, str]) -> dict[str, Any]:
         },
     ]
 
-    threshold = as_decimal(tender["mii_local_content_threshold_pct"]) or Decimal(0)
+    threshold = mii_local_content_threshold_pct or Decimal(0)
     if threshold > 0:
         criteria.append(
             {
@@ -163,7 +173,7 @@ def build_eligibility_rules(tender: dict[str, str]) -> dict[str, Any]:
             }
         )
 
-    if as_int(tender["epfo_applicable_employee_threshold"]) is not None:
+    if epfo_applicable_employee_threshold is not None:
         criteria.append(
             {
                 "id": "epfo_compliance",
@@ -182,7 +192,7 @@ def build_eligibility_rules(tender: dict[str, str]) -> dict[str, Any]:
         }
     )
 
-    if as_bool(tender["msme_reserved"]):
+    if msme_reserved:
         criteria.append(
             {
                 "id": "msme_eligibility",
@@ -192,17 +202,20 @@ def build_eligibility_rules(tender: dict[str, str]) -> dict[str, Any]:
             }
         )
 
-    if as_bool(tender["requires_oem_authorization"]):
-        criteria.append(
-            {
-                "id": "oem_authorization",
-                "type": "graded",
-                "weight": 0.20,
-                "source": "cross_check.oem_authorization_letter",
-            }
-        )
-
     return {"criteria": criteria}
+
+
+def build_eligibility_rules(tender: dict[str, str]) -> dict[str, Any]:
+    """Thin CSV-string adapter over build_eligibility_rules_typed, used by the seeder."""
+    return build_eligibility_rules_typed(
+        msme_reserved=as_bool(tender["msme_reserved"]),
+        mii_local_content_threshold_pct=as_decimal(
+            tender["mii_local_content_threshold_pct"]
+        ),
+        epfo_applicable_employee_threshold=as_int(
+            tender["epfo_applicable_employee_threshold"]
+        ),
+    )
 
 
 def derive_verification_rows(

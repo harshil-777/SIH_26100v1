@@ -1,20 +1,5 @@
 services:
-  postgres:
-    image: postgres:15-alpine
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-gem}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-gem}
-      POSTGRES_DB: ${POSTGRES_DB:-gem_compliance}
-    ports:
-      - "5432:5432"
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-gem} -d ${POSTGRES_DB:-gem_compliance}"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-
+  # Postgres runs on Supabase (see .env DATABASE_URL) — no local postgres service.
   redis:
     image: redis:7-alpine
     ports:
@@ -29,7 +14,7 @@ services:
     build: .
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-gem}:${POSTGRES_PASSWORD:-gem}@postgres:5432/${POSTGRES_DB:-gem_compliance}
+      DATABASE_URL: ${DATABASE_URL}
       REDIS_URL: redis://redis:6379/0
       ADAPTER_MODE: ${ADAPTER_MODE:-mock}
       SEED_DATA_DIR: /seed_data
@@ -41,8 +26,6 @@ services:
       - ./storage:/app/storage
       - ./WORKING DOCUMENTS:/seed_data:ro
     depends_on:
-      postgres:
-        condition: service_healthy
       redis:
         condition: service_healthy
 
@@ -50,7 +33,7 @@ services:
     build: .
     command: celery -A app.celery_app.celery_app worker --loglevel=info
     environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-gem}:${POSTGRES_PASSWORD:-gem}@postgres:5432/${POSTGRES_DB:-gem_compliance}
+      DATABASE_URL: ${DATABASE_URL}
       REDIS_URL: redis://redis:6379/0
       ADAPTER_MODE: ${ADAPTER_MODE:-mock}
       SEED_DATA_DIR: /seed_data
@@ -60,8 +43,6 @@ services:
       - ./storage:/app/storage
       - ./WORKING DOCUMENTS:/seed_data:ro
     depends_on:
-      postgres:
-        condition: service_healthy
       redis:
         condition: service_healthy
 
@@ -78,5 +59,4 @@ services:
       - web_node_modules:/web/node_modules
 
 volumes:
-  pgdata:
   web_node_modules:

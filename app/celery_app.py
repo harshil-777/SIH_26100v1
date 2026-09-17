@@ -8,6 +8,7 @@ celery_app = Celery(
     "gem_compliance",
     broker=settings.redis_url,
     backend=settings.redis_url,
+    include=["app.tasks"],
 )
 celery_app.conf.update(
     task_serializer="json",
@@ -15,4 +16,5 @@ celery_app.conf.update(
     accept_content=["json"],
     timezone="UTC",
     enable_utc=True,
+    task_track_started=True,
 )
