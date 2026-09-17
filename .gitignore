@@ -10,3 +10,7 @@ storage/*
 
 node_modules/
 web/dist/
+*.tsbuildinfo
+
+# Local-only, not for GitHub
+FRIEND_PC_SETUP.md
