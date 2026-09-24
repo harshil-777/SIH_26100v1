@@ -10,7 +10,7 @@ import json
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import AuditLog
+from app.models import AuditLog, Bid
 
 
 def compute_curr_hash(prev_hash: str | None, payload: dict) -> str:
@@ -32,6 +32,10 @@ async def _latest_curr_hash(session: AsyncSession, bid_id: str) -> str | None:
 async def write_audit_log(
     session: AsyncSession, *, bid_id: str, actor: str, action: str, payload: dict
 ) -> AuditLog:
+    # Lock the bid row until this transaction ends, so two writers for one bid (an officer's
+    # decision landing while a verification run finishes) can't both read the same prev_hash
+    # and fork the chain -- which verify_chain would then report as permanently broken.
+    await session.execute(select(Bid.bid_id).where(Bid.bid_id == bid_id).with_for_update())
     prev_hash = await _latest_curr_hash(session, bid_id)
     curr_hash = compute_curr_hash(prev_hash, payload)
     row = AuditLog(

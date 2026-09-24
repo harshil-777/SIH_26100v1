@@ -16,7 +16,7 @@ Full architecture and phase-by-phase build spec: [`WORKING DOCUMENTS/BUILD_SPEC.
 | 0 | Schema, seed data, scaffold | ✅ Done |
 | 1 | Core verification pipeline against seed data | ✅ Done |
 | 2 | Real uploads + OCR | ✅ Done |
-| 3 | Dashboard + officer actions (frontend) | Scaffolded only |
+| 3 | Dashboard + officer actions (frontend) | ✅ Done |
 | 4 | Polish (recommendation UI, hash-chain viewer) | Not started |
 
 ## Tech stack
@@ -58,7 +58,8 @@ app/
   tasks.py         Celery tasks: the verification pipeline and per-upload OCR
 scripts/
   make_sample_documents.py   Generates sample certificates for testing uploads
-web/               React dashboard (bid list; detail views are Phase 3)
+web/               React officer dashboard: bid list + bid detail (score, cross-checks,
+                   OCR results, portal checks, decision panel, audit chain)
 ```
 
 ### The verification pipeline
@@ -88,6 +89,7 @@ web/               React dashboard (bid list; detail views are Phase 3)
 | GET | `/tenders/{tender_id}` | Tender detail |
 | GET | `/tenders/{tender_id}/document-requirements` | Required documents for a tender |
 | POST | `/bids` | Create a bid |
+| GET | `/bids/{bid_id}` | Bid detail: bidder, tender, declarations, latest result per portal |
 | POST | `/bids/{bid_id}/documents` | Multipart upload (`document_type`, `file`, optional `note`): PDF/PNG/JPEG/TIFF up to 10 MB, OCR queued. Omit `file` to record a non-submission |
 | GET | `/bids/{bid_id}/documents` | Submissions with their latest upload and OCR result |
 | POST | `/bids/{bid_id}/declarations` | Submit/update a bidder self-declaration |
@@ -95,7 +97,7 @@ web/               React dashboard (bid list; detail views are Phase 3)
 | GET | `/bids/{bid_id}/status` | Poll pipeline job status |
 | GET | `/bids/{bid_id}/compliance-score` | Latest score + criterion breakdown |
 | GET | `/bids/{bid_id}/audit-log` | Full hash-chained history (chain-verified) |
-| POST | `/bids/{bid_id}/decision` | Officer action: qualify / disqualify / request clarification |
+| POST | `/bids/{bid_id}/decision` | Officer action: qualify / disqualify / request clarification (a reason is required for the last two) |
 | GET | `/dashboard/bids?tender_id=` | List view for the procurement officer dashboard |
 
 Interactive docs at `/docs` once the API is running.
@@ -125,6 +127,8 @@ docker compose up -d redis worker   # background pipeline jobs
 ```bash
 cd web && npm install && npm run dev   # frontend on :5173
 ```
+
+Or run the whole stack in Docker: `docker compose up -d` (API on :8000, dashboard on :5173).
 
 Try an upload with a generated sample (B009's seeded scenario is a GST trade-name mismatch):
 

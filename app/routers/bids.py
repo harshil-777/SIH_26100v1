@@ -19,10 +19,13 @@ from app.models import (
     Document,
     DocumentType,
     Tender,
+    VerificationResult,
 )
 from app.schemas.bids import (
     AuditLogEntryOut,
     AuditLogOut,
+    BidDetailOut,
+    BidderSummary,
     BidCreate,
     BidOut,
     ComplianceScoreOut,
@@ -33,6 +36,8 @@ from app.schemas.bids import (
     DocumentOut,
     DocumentUploadOut,
     StatusOut,
+    TenderSummary,
+    VerificationResultOut,
     VerifyJobOut,
 )
 from app.services.audit import get_audit_log, verify_chain, write_audit_log
@@ -74,6 +79,39 @@ async def create_bid(payload: BidCreate, session: AsyncSession = Depends(get_ses
     await session.commit()
     await session.refresh(bid)
     return bid
+
+
+@router.get("/{bid_id}", response_model=BidDetailOut)
+async def get_bid(bid_id: str, session: AsyncSession = Depends(get_session)) -> BidDetailOut:
+    bid = await _get_bid_or_404(session, bid_id)
+    bidder = await session.get(Bidder, bid.bidder_id)
+    tender = await session.get(Tender, bid.tender_id)
+
+    declarations = (
+        await session.execute(
+            select(BidDeclaration)
+            .where(BidDeclaration.bid_id == bid_id)
+            .order_by(BidDeclaration.criterion_code)
+        )
+    ).scalars().all()
+    latest_results = (
+        await session.execute(
+            select(VerificationResult)
+            .where(VerificationResult.bid_id == bid_id)
+            .distinct(VerificationResult.source)
+            .order_by(VerificationResult.source, VerificationResult.verified_at.desc())
+        )
+    ).scalars().all()
+
+    return BidDetailOut(
+        bid_id=bid.bid_id,
+        status=bid.status,
+        submitted_at=bid.submitted_at,
+        bidder=BidderSummary.model_validate(bidder),
+        tender=TenderSummary.model_validate(tender),
+        declarations=[DeclarationOut.model_validate(row) for row in declarations],
+        verification_results=[VerificationResultOut.model_validate(row) for row in latest_results],
+    )
 
 
 async def _upsert_submission(
@@ -332,13 +370,22 @@ async def record_decision(
 ) -> DecisionOut:
     bid = await _get_bid_or_404(session, bid_id)
 
+    previous_status = bid.status
     bid.status = _DECISION_TO_STATUS[payload.decision]
     audit_row = await write_audit_log(
         session,
         bid_id=bid_id,
         actor=payload.actor,
         action="officer_decision",
-        payload={"decision": payload.decision, "reason": payload.reason},
+        # actor and the status transition sit inside the hashed payload, so rewriting who
+        # decided (or what the bid was before) breaks the chain rather than going unnoticed.
+        payload={
+            "decision": payload.decision,
+            "reason": payload.reason,
+            "actor": payload.actor,
+            "previous_status": previous_status,
+            "new_status": bid.status,
+        },
     )
     await session.commit()
 

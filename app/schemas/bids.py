@@ -1,9 +1,9 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, model_validator
 
 
 class BidCreate(BaseModel):
@@ -92,8 +92,16 @@ class ComplianceScoreOut(BaseModel):
 
 class DecisionIn(BaseModel):
     decision: Literal["qualify", "disqualify", "request_clarification"]
-    actor: str
+    actor: str = Field(min_length=1)
     reason: str | None = None
+
+    @model_validator(mode="after")
+    def _reason_required_for_adverse_decisions(self) -> "DecisionIn":
+        # A disqualification or clarification request has to say why -- that text is what the
+        # bidder is told and what an auditor reviews. Qualifying may stand on the score alone.
+        if self.decision != "qualify" and not (self.reason and self.reason.strip()):
+            raise ValueError(f"A reason is required to {self.decision.replace('_', ' ')}")
+        return self
 
 
 class DecisionOut(BaseModel):
@@ -120,3 +128,55 @@ class AuditLogOut(BaseModel):
     chain_valid: bool
     broken_at: list[str]
     entries: list[AuditLogEntryOut]
+
+
+class BidderSummary(BaseModel):
+    bidder_id: str
+    name: str
+    pan: str
+    gstin: str | None
+    udyam_number: str | None
+    cin: str | None
+    dpiit_recognition_number: str | None
+    nsic_registration_number: str | None
+    epfo_establishment_code: str | None
+    employee_count: int | None
+    enterprise_category: str | None
+    state: str | None
+
+    model_config = {"from_attributes": True}
+
+
+class TenderSummary(BaseModel):
+    tender_id: str
+    title: str
+    department: str
+    category: str
+    estimated_value_inr: Decimal
+    msme_reserved: bool
+    mii_local_content_threshold_pct: Decimal | None
+    requires_oem_authorization: bool
+    submission_deadline: date
+
+    model_config = {"from_attributes": True}
+
+
+class VerificationResultOut(BaseModel):
+    source: str
+    status: str
+    confidence_score: Decimal | None
+    raw_response_json: dict[str, Any] | None
+    verified_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class BidDetailOut(BaseModel):
+    bid_id: str
+    status: str
+    submitted_at: datetime
+    bidder: BidderSummary
+    tender: TenderSummary
+    declarations: list[DeclarationOut]
+    # Latest result per portal source.
+    verification_results: list[VerificationResultOut]

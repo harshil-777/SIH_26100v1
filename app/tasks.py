@@ -4,6 +4,7 @@ import asyncio
 import logging
 
 from celery import Task
+from celery.result import AsyncResult
 
 from app.celery_app import celery_app
 from app.services.ocr import run_ocr_for_document
@@ -31,6 +32,11 @@ def enqueue(task: Task, *, args: list, task_id: str) -> bool:
     try:
         with celery_app.connection_for_write() as conn:
             conn.ensure_connection(max_retries=1, interval_start=0, interval_step=0, timeout=3)
+            # Task ids are reused (verify's is the bid_id), so drop the previous run's stored
+            # result first: otherwise /status reports that stale SUCCESS until the worker picks
+            # the new job up, and a poller takes the old result for the new one. Done before
+            # publishing so it can never erase the new run's own result.
+            AsyncResult(task_id, app=celery_app).forget()
             task.apply_async(args=args, task_id=task_id, connection=conn, retry=False)
         return True
     except Exception:

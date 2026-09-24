@@ -308,6 +308,7 @@ write atomically (temp file, then rename). Uploads use content-addressed keys,
 | GET | `/tenders/{tender_id}` | Tender detail |
 | GET | `/tenders/{tender_id}/document-requirements` | List `tender_document_requirements` for it |
 | POST | `/bids` | Create a bid (bidder + tender) |
+| GET | `/bids/{bid_id}` | Bid detail for the dashboard: bidder, tender, declarations, and the latest `verification_results` row per source (Phase 3) |
 | POST | `/bids/{bid_id}/documents` | Multipart upload of one document (Phase 2 — replaces Phase 1's JSON file-reference form). Details below |
 | GET | `/bids/{bid_id}/documents` | Each submission with its latest upload and OCR result; `is_placeholder` marks seeded rows with no stored file |
 | POST | `/bids/{bid_id}/declarations` | Submit/update `bid_declarations` rows |
@@ -315,7 +316,7 @@ write atomically (temp file, then rename). Uploads use content-addressed keys,
 | GET | `/bids/{bid_id}/status` | Poll job/pipeline status |
 | GET | `/bids/{bid_id}/compliance-score` | Latest `compliance_scores` row + `criterion_breakdown_json` |
 | GET | `/bids/{bid_id}/audit-log` | Full hash-chained history for this bid |
-| POST | `/bids/{bid_id}/decision` | Officer action: `qualify` / `disqualify` / `request_clarification`; writes to `audit_log` |
+| POST | `/bids/{bid_id}/decision` | Officer action: `qualify` / `disqualify` / `request_clarification`; writes to `audit_log`. `actor` is required; `reason` is required for `disqualify` and `request_clarification` (422 otherwise). The hashed payload carries `decision`, `reason`, `actor`, `previous_status` and `new_status` |
 | GET | `/dashboard/bids?tender_id=` | List view: bid, bidder, score, risk badge, status |
 
 **`POST /bids/{bid_id}/documents` contract.** Form fields: `document_type` (a `document_types`
@@ -450,10 +451,31 @@ from the common government layouts may yield fewer fields (the field is then sim
 guessed); only the first `OCR_MAX_PAGES` pages are read; `ocr_document` tasks and `/verify` both
 need Redis, and image OCR needs the Tesseract binary (see §1).
 
-**Phase 3 — Dashboard + officer actions**
+**Phase 3 — Dashboard + officer actions** — ✅ complete
 DoD: `web/` renders the bid list and bid detail views described in the guide's §10, and
 `POST /bids/{bid_id}/decision` writes a verifiable audit-log entry that the frontend can display as
 a chain.
+
+Built (the guide was not in this drop, so the views follow this spec and the API):
+- **Bid list** (`#/`): risk-band count tiles that double as filters, tender / status filters,
+  search, score sort; a card layout below the `md` breakpoint.
+- **Bid detail** (`#/bids/<bid_id>`): score gauge + mandatory failures + the advisory
+  recommendation (labelled AI-generated, advisory only); criteria breakdown with normalised
+  weights; three-way cross-verification table (declared / document / portal, mismatched legs in
+  red, seed placeholders and unreadable uploads called out); documents with OCR status and
+  extracted fields; latest portal checks; bidder & tender profile with self-declarations; a
+  "Re-run verification" button that polls `/status`.
+- **Decision panel**: qualify / request clarification / disqualify, officer name, reason
+  (required for adverse decisions, and in the UI also when qualifying a High / Non-Compliant
+  bid). On submit the status and audit trail refresh in place.
+- **Audit trail**: newest-first chain, each entry showing `prev_hash → curr_hash`, a per-link
+  check that `prev_hash` equals the preceding `curr_hash`, and the server's `chain_valid` /
+  `broken_at` verdict.
+
+Verified in a browser against the live database: all 12 bids list with correct scores and bands;
+B009 shows the GST trade-name mismatch from the real upload; B012 shows the missing OEM letter as
+the mandatory failure; disqualifying B002 is blocked until a reason is entered, then appends a
+linked entry and the chain stays intact; no horizontal scroll at 390px.
 
 **Phase 4 — Polish**
 DoD: recommendation text renders on the dashboard labeled advisory-only; hash chain is visibly
