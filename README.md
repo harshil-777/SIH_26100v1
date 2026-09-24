@@ -18,17 +18,20 @@ Full architecture and phase-by-phase build spec: [`WORKING DOCUMENTS/BUILD_SPEC.
 | 2 | Real uploads + OCR | ✅ Done |
 | 3 | Dashboard + officer actions (frontend) | ✅ Done |
 | 4 | Polish (recommendation UI, hash-chain verification, ground truth 12/12) | ✅ Done |
+| 5 | Reproducible stack (local Postgres in Compose) + automated tests (86) | ✅ Done |
 
 ## Tech stack
 
 - **Backend**: Python 3.11+, FastAPI, SQLAlchemy 2.x (async), Pydantic v2
 - **Async jobs**: Celery + Redis — every adapter/OCR/AI call runs as a background task
-- **Database**: PostgreSQL 15+ (this project runs it on [Supabase](https://supabase.com))
+- **Database**: PostgreSQL 15+ — the Compose stack's own `postgres` service by default, or any
+  external one such as [Supabase](https://supabase.com) via `DATABASE_URL`
 - **OCR**: pdfplumber for PDF text layers, Tesseract for images and scanned PDFs
 - **Object storage**: local `./storage/` behind an `ObjectStore` interface (S3/MinIO-ready)
 - **Frontend**: React + TypeScript, Vite, TailwindCSS
-- **Containerization**: Docker Compose (`redis` + `worker` + `api` + `web`; Postgres is
-  external, not containerized)
+- **Containerization**: Docker Compose (`postgres` + `redis` + `worker` + `api` + `web`, plus an
+  on-demand `test` service)
+- **Tests**: pytest — unit tests need nothing; integration tests use a throwaway Postgres database
 
 ## Architecture
 
@@ -62,6 +65,9 @@ scripts/
   verify_audit_chain.py      Walks the whole audit log in the DB and confirms no chain is broken
 web/               React officer dashboard: bid list + bid detail (score, cross-checks,
                    OCR results, portal checks, decision panel, audit chain)
+tests/
+  unit/            No database or network: rules, scoring, audit chain, OCR parsing, API errors
+  integration/     Throwaway Postgres: all 12 seed bids end to end, uploads, decisions, audit
 ```
 
 ### The verification pipeline
@@ -108,8 +114,20 @@ Interactive docs at `/docs` once the API is running.
 
 ## Running it
 
-You need a Postgres database (Supabase works well — see the free tier) and, for the
-`/verify` endpoint specifically, Redis (via Docker Compose, or any Redis-compatible host).
+**Quickest — everything in Docker, nothing external:**
+
+```bash
+cp .env.example .env          # leave DATABASE_URL unset to use the bundled postgres
+docker compose up -d          # postgres, redis, api (:8000), worker, dashboard (:5173)
+docker compose exec api python -m alembic upgrade head
+docker compose exec api python -m app.db.seed
+```
+
+Then open http://localhost:5173. To use Supabase or another external Postgres instead, set
+`DATABASE_URL` in `.env` (see `.env.example`); it takes precedence over the bundled one.
+
+**Or run the Python side directly.** You need a Postgres database and, for the `/verify`
+endpoint specifically, Redis (via Docker Compose, or any Redis-compatible host).
 If Redis is down, `/verify` returns 503 and uploads still succeed (their OCR then runs as
 part of the next verification). For image and scanned-PDF OCR outside Docker, install
 [Tesseract](https://github.com/UB-Mannheim/tesseract/wiki) (the Docker image already has it).
@@ -132,8 +150,6 @@ docker compose up -d redis worker   # background pipeline jobs
 cd web && npm install && npm run dev   # frontend on :5173
 ```
 
-Or run the whole stack in Docker: `docker compose up -d` (API on :8000, dashboard on :5173).
-
 Try an upload with a generated sample (B009's seeded scenario is a GST trade-name mismatch):
 
 ```bash
@@ -143,7 +159,23 @@ curl -X POST localhost:8000/bids/BID-B009-T2026-0006/documents \
 curl -X POST localhost:8000/bids/BID-B009-T2026-0006/verify
 ```
 
-Check the system end to end (API and worker must be running):
+## Tests
+
+```bash
+pip install -r requirements.txt -r requirements-dev.txt
+pytest                         # unit tests; integration tests skip without a test database
+
+docker compose up -d postgres  # throwaway test database lives on the bundled postgres
+TEST_DATABASE_URL=postgresql+asyncpg://gem:gem@localhost:5433/gem_compliance_test pytest
+
+docker compose run --rm test   # the whole suite inside the Docker image (includes Tesseract OCR)
+```
+
+The integration tests migrate, wipe and reseed the database in `TEST_DATABASE_URL`, so it must
+be a disposable one whose name ends in `_test` — anything else is refused. Tests never use
+`DATABASE_URL`, so they can't touch a shared database.
+
+Check a running deployment end to end (API and worker must be running):
 
 ```bash
 python scripts/check_ground_truth.py   # re-verifies all 12 seed bids; expect "12/12 ... match"

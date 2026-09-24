@@ -47,16 +47,20 @@ Load these seed files from the same folder before Phase 1: `dummy_tenders.csv`,
     recommendation.py     # LLM call, structured input only
   /db
     seed.py             # loads the six seed files into Postgres
+    ground_truth.py      # each seed scenario's expected_ground_truth as explicit checks (Phase 5)
     migrations/          # alembic
   main.py
 /scripts
   make_sample_documents.py  # generates sample certificates for exercising uploads + OCR
   check_ground_truth.py     # runs all 12 seed bids end to end, checks expected_ground_truth (Phase 4)
   verify_audit_chain.py     # walks the whole audit_log straight from the DB, confirms no break (Phase 4)
+/tests                # pytest (Phase 5): unit/ needs nothing; integration/ needs TEST_DATABASE_URL
 /web                  # React app
 /storage              # uploaded files (dev only)
 docker-compose.yml
 .env.example
+requirements-dev.txt   # pytest, pytest-asyncio, httpx
+pytest.ini
 ```
 
 ---
@@ -533,6 +537,60 @@ Known limits:
 - The recommendation is a deterministic template. §7 stage 7 envisages an LLM over the structured
   breakdown; that needs an API key and, per §1, must run inside the Celery task with its output
   stored for display (it is currently computed per request).
+
+**Phase 5 — Reproducible stack + automated tests** — ✅ complete
+Added after Phase 4 (the original plan ended there) to close what the spec required but the
+build hadn't delivered: §1 and Phase 0 require `docker-compose up` to bring up a `postgres`
+service, but the project ran only against a shared Supabase database, and there were no automated
+tests — every check so far was manual or a script that writes to that shared database.
+No new API endpoints and no external services.
+
+DoD: `docker compose up` brings up api, worker, **postgres**, redis and web, and works without any
+external database; `pytest` runs a unit suite with no database or network; an integration suite
+migrates and seeds a throwaway database and proves the Phase 1, 2, 3 and 4 DoDs there, never on a
+shared database; the whole suite also runs inside the Docker image (where Tesseract is present).
+
+- **Compose**: `postgres` (16-alpine, volume `pg_data`, host port **5433** so it can't clash with
+  a Postgres already on the machine). api/worker default `DATABASE_URL` to it; a `DATABASE_URL` in
+  `.env` (e.g. Supabase) still wins, so existing setups are unchanged. A `test` service (Compose
+  profile `test`, so `up` never starts it) runs the full suite: `docker compose run --rm test`.
+- **Safety**: `tests/conftest.py` forces `DATABASE_URL` before the app is imported — to
+  `TEST_DATABASE_URL`, or to an address nothing listens on — so no test can reach the team database
+  via `.env`. `TEST_DATABASE_URL` must name a database ending in `_test` (seeding wipes it); anything
+  else is refused before a test runs. Redis is pointed at a dead address, which also exercises the
+  "broker down" paths (uploads report `pending_verification`; OCR then runs inside the pipeline).
+- **Unit tests** (`tests/unit`, 61): scoring rule and band boundaries; rule-engine mandatory
+  checks, the MSME reservation (mandatory, and the legacy graded form), the exemption-proof rule,
+  local content, EPFO, three-way cross-verification (name normalisation, placeholder supersession,
+  unreadable uploads); audit-chain detection of edited, deleted, reordered and forged entries;
+  recommendation wording; OCR file sniffing, field parsing, text-layer / corrupt / image / scanned
+  PDFs (the last two skip without Tesseract); API error shaping and decision validation.
+- **Integration tests** (`tests/integration`, 25, each module reseeds): all 12 seed bids through
+  the full 8-stage pipeline match `expected_ground_truth` (Phase 4, from a clean seed); a
+  mismatching then matching GST upload is OCR'd in the pipeline and supersedes the placeholder,
+  plus upload validation codes (Phase 2); decisions through the API write a linked, hashed entry
+  naming the officer and update status (Phase 3); concurrent audit writers are serialised; the
+  whole-log walk catches an edited payload and a deleted entry; `/audit/verify` reports clean.
+- `app/db/ground_truth.py` now holds the per-scenario expectations, shared by the integration
+  tests and `scripts/check_ground_truth.py` (which still runs on a bare Python).
+
+Verified: 86/86 inside the Docker image; locally 84 passed + 2 skipped (no Tesseract on the host)
+with `TEST_DATABASE_URL`, 59 + 27 skipped without. Deliberately breaking the exemption rule, the
+40-point cap, or the audit-row lock each makes the relevant tests fail. The shared database's
+audit log was unchanged across full test runs. A one-off container with `DATABASE_URL` pointed at
+the Compose `postgres` migrated, seeded, and held all 12 bids (Phase 0's DoD, self-contained).
+
+Run:
+```bash
+docker compose up -d postgres
+pip install -r requirements.txt -r requirements-dev.txt
+pytest                                   # unit only (integration skipped)
+TEST_DATABASE_URL=postgresql+asyncpg://gem:gem@localhost:5433/gem_compliance_test pytest
+docker compose run --rm test             # everything, including Tesseract OCR tests
+```
+
+Known limits: the web app has no automated tests (its behaviour was verified by driving it in a
+browser during Phases 3–4); there is no CI workflow yet — the commands above are what one would run.
 
 ---
 

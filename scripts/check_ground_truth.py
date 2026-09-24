@@ -8,9 +8,9 @@ Run from the repo root with the API and worker up:
 Exits non-zero if any bid misses its expectation. Each run of the first form appends one normal
 verify_completed entry to every bid's audit log, exactly as clicking "Re-run verification" would.
 
-expected_ground_truth is free text, so each scenario_tag's meaning is pinned down below as the
-checks it implies: the risk band, which mandatory criterion (if any) must be the one that fails,
-and which flag must be raised. Uses only the standard library so it runs from any Python 3.11+.
+What each scenario's free-text expectation means is pinned down in app/db/ground_truth.py,
+shared with the integration tests. Needs only the standard library, so it runs from any
+Python 3.11+ without the app's dependencies installed.
 """
 import argparse
 import csv
@@ -19,81 +19,14 @@ import sys
 import time
 import urllib.error
 import urllib.request
-from collections.abc import Callable
 from pathlib import Path
 
-SEED_BIDDERS = Path(__file__).resolve().parent.parent / "WORKING DOCUMENTS" / "dummy_bidders.csv"
-NOT_NON_COMPLIANT = {"Low", "Medium", "High"}
+REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO_ROOT))
 
-Breakdown = dict
-Check = Callable[[Breakdown], str | None]  # returns a failure message, or None when satisfied
+from app.db.ground_truth import EXPECTATIONS, evaluate  # noqa: E402
 
-
-def _criteria(b: Breakdown) -> dict[str, dict]:
-    return {c["id"]: c for c in b["criteria"]}
-
-
-def fails_only(*criterion_ids: str) -> Check:
-    """Exactly these mandatory criteria fail -- the bid is out for the scenario's reason, not another."""
-
-    def check(b: Breakdown) -> str | None:
-        failing = sorted(c["id"] for c in b["criteria"] if c["type"] == "mandatory" and c["passed"] is False)
-        return None if failing == sorted(criterion_ids) else f"mandatory failures {failing}, expected {sorted(criterion_ids)}"
-
-    return check
-
-
-def graded_below_100(criterion_id: str) -> Check:
-    def check(b: Breakdown) -> str | None:
-        c = _criteria(b).get(criterion_id)
-        if c is None:
-            return f"criterion {criterion_id} not evaluated"
-        return None if c["score"] is not None and c["score"] < 100 else f"{criterion_id} scored {c['score']}, expected a shortfall"
-
-    return check
-
-
-def mismatch_on(*fact_keys: str) -> Check:
-    """At least one of these facts is flagged as a mismatch in the cross-verification."""
-
-    def check(b: Breakdown) -> str | None:
-        consistency = _criteria(b).get("declaration_document_consistency") or {}
-        comparisons = (consistency.get("evidence") or {}).get("comparisons") or {}
-        for key in fact_keys:
-            comparison = comparisons.get(key)
-            if comparison and (comparison.get("match") is False or comparison.get("document_match") is False):
-                return None
-        return f"no mismatch flagged on any of {list(fact_keys)}"
-
-    return check
-
-
-def missing_document(document_type: str) -> Check:
-    def check(b: Breakdown) -> str | None:
-        completeness = _criteria(b).get("document_completeness") or {}
-        missing = [m["document_type"] for m in (completeness.get("evidence") or {}).get("missing_documents", [])]
-        return None if document_type in missing else f"{document_type} not reported missing (missing: {missing})"
-
-    return check
-
-
-# scenario_tag -> (allowed risk levels, extra checks, recommendation must say to qualify)
-EXPECTATIONS: dict[str, tuple[set[str], list[Check], bool]] = {
-    "clean_compliant": ({"Low"}, [fails_only()], True),
-    "gst_cancelled": ({"Non-Compliant"}, [fails_only("gst_active")], False),
-    "pan_invalid": ({"Non-Compliant"}, [fails_only("pan_valid")], False),
-    # Declared Small vs portal Medium: flagged, but Medium is still an MSME, so still eligible.
-    "udyam_category_mismatch": (NOT_NON_COMPLIANT, [fails_only(), mismatch_on("enterprise_category", "placeholder:udyam_certificate")], False),
-    "blacklisted": ({"Non-Compliant"}, [fails_only("not_debarred")], False),
-    "local_content_below_threshold": (NOT_NON_COMPLIANT, [fails_only(), graded_below_100("local_content_pct")], False),
-    "epfo_mismatch": (NOT_NON_COMPLIANT, [fails_only(), graded_below_100("epfo_compliance")], False),
-    "startup_recognition_expired": (NOT_NON_COMPLIANT, [fails_only(), mismatch_on("startup_recognized", "placeholder:dpiit_recognition_certificate")], False),
-    "document_portal_name_mismatch": (NOT_NON_COMPLIANT, [fails_only(), mismatch_on("gst_trade_name", "placeholder:gst_certificate")], False),
-    # Statutory checks pass; out only on the tender's MSME reservation -- not a document gap.
-    "not_msme_ineligible_for_reservation": ({"Non-Compliant"}, [fails_only("msme_eligibility")], False),
-    "clean_compliant_non_msme": ({"Low"}, [fails_only()], True),
-    "missing_oem_authorization": ({"Non-Compliant"}, [fails_only("document_completeness"), missing_document("OEM_AUTHORIZATION_LETTER")], False),
-}
+SEED_BIDDERS = REPO_ROOT / "WORKING DOCUMENTS" / "dummy_bidders.csv"
 
 
 def _request(api: str, method: str, path: str) -> dict:
@@ -151,17 +84,12 @@ def main() -> int:
     failures = 0
     for bid in bids:
         bid_id, tag = bid["bid_id"], bid["scenario_tag"]
-        allowed, checks, should_qualify = EXPECTATIONS[tag]
         if bid_id in run_errors:
             problems = [f"pipeline {run_errors[bid_id]}"]
             score = None
         else:
             score = _request(args.api, "GET", f"/bids/{bid_id}/compliance-score")
-            breakdown = score["criterion_breakdown_json"]
-            problems = [] if score["risk_level"] in allowed else [f"risk {score['risk_level']}, expected {'/'.join(sorted(allowed))}"]
-            problems += [p for p in (check(breakdown) for check in checks) if p]
-            if should_qualify and "Recommend qualifying" not in score["recommendation"]:
-                problems.append("recommendation does not advise qualifying")
+            problems = evaluate(tag, score["risk_level"], score["criterion_breakdown_json"], score["recommendation"])
 
         failures += bool(problems)
         result = f"{score['overall_score']:>6} {score['risk_level']:<13}" if score else " " * 20
