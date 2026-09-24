@@ -6,8 +6,10 @@ there are only 8 known criterion IDs across every tender (see app/db/fixtures.py
 small closed dispatch table is the simplest thing that satisfies the DoD, per the spec's
 own directive to prefer the simplest thing where it's silent on mechanism.
 """
+import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import date
 from typing import Any
 
 from sqlalchemy import select
@@ -17,20 +19,23 @@ from app.adapters.mock_registry import get_registry
 from app.models import Bidder, BidDeclaration
 from app.services.completeness import CompletenessResult
 
-# Declaration criterion_code -> function pulling the comparable portal-verified value.
-_DECLARATION_PORTAL_FIELD: dict[str, Callable[["Facts"], Any]] = {
-    "enterprise_category_self_declared": lambda f: (f.portal_facts.get("udyam") or {}).get(
-        "category"
-    ),
-    "local_content_pct_self_declared": lambda f: (
-        f.portal_facts.get("mii_local_content") or {}
-    ).get("verified_pct_estimate"),
-    "startup_status_self_declared": lambda f: (
-        f.portal_facts.get("startup_india") or {}
-    ).get("status"),
+_LOCAL_CONTENT_TOLERANCE_PCT = 2.0
+
+_UDYAM_DOCS = ("UDYAM_CERTIFICATE", "EMD_EXEMPTION_PROOF")
+
+# The fixture's document_cross_check doc_type -> the document_types it is a placeholder for.
+# A real upload of any of these supersedes the placeholder entry.
+_FIXTURE_PLACEHOLDER_FOR = {
+    "gst_certificate": ("GST_CERTIFICATE",),
+    "udyam_certificate": _UDYAM_DOCS,
+    "local_content_self_certificate": ("MII_LOCAL_CONTENT_SELF_CERTIFICATE",),
+    "epfo_compliance_certificate": ("EPFO_ESIC_COMPLIANCE_CERTIFICATE",),
+    "pan_card": ("PAN_CARD",),
+    "oem_authorization_letter": ("OEM_AUTHORIZATION_LETTER",),
+    "dpiit_recognition_certificate": ("STARTUP_EMD_EXEMPTION_PROOF",),
 }
 
-_LOCAL_CONTENT_TOLERANCE_PCT = 2.0
+_LEGAL_SUFFIXES = {"private", "pvt", "limited", "ltd", "llp", "m/s", "ms", "the"}
 
 
 @dataclass(frozen=True)
@@ -41,7 +46,7 @@ class Facts:
     bidder_employee_count: int | None
     completeness: CompletenessResult
     portal_facts: dict[str, dict]  # source -> raw fixture payload
-    ocr_facts: dict[str, dict]  # doc_type -> extracted fields (empty in Phase 1)
+    ocr_facts: dict[str, dict]  # doc_type -> documents.ocr_extracted_json ({} for placeholders)
     declarations: dict[str, str]  # criterion_code -> declared_value
     document_cross_check: list[dict] = field(default_factory=list)
 
@@ -199,6 +204,9 @@ def _eval_local_content_pct(criterion: dict, facts: Facts) -> CriterionOutcome:
         evidence={
             "portal_verified_pct": verified_pct,
             "declared_pct": declared_pct,
+            "document_pct": _as_float(
+                _extracted_fields(facts, "MII_LOCAL_CONTENT_SELF_CERTIFICATE").get("local_content_pct")
+            ),
             "threshold": threshold,
         },
         reason=reason,
@@ -230,90 +238,267 @@ def _eval_epfo_compliance(criterion: dict, facts: Facts) -> CriterionOutcome:
     )
 
 
-def _declaration_matches_portal(criterion_code: str, declared_value: str, portal_value: Any) -> bool | None:
-    if criterion_code == "enterprise_category_self_declared":
-        if portal_value is None:
-            return None
-        return declared_value.strip().lower() == str(portal_value).strip().lower()
+def _extracted_fields(facts: Facts, doc_type: str) -> dict:
+    result = facts.ocr_facts.get(doc_type) or {}
+    if result.get("status") != "extracted":
+        return {}
+    return result.get("fields") or {}
 
-    if criterion_code == "local_content_pct_self_declared":
-        declared = _as_float(declared_value)
-        portal = _as_float(portal_value)
-        if declared is None or portal is None:
-            return None
-        return abs(declared - portal) <= _LOCAL_CONTENT_TOLERANCE_PCT
 
-    if criterion_code == "startup_status_self_declared":
-        if portal_value is None:
-            return None
-        declared_recognized = "recognized" in declared_value.strip().lower()
-        portal_recognized = str(portal_value).strip().lower() in ("valid", "active", "recognized")
-        return declared_recognized == portal_recognized
+def _portal(source: str, key: str) -> Callable[[Facts], Any]:
+    return lambda f: (f.portal_facts.get(source) or {}).get(key)
 
+
+def _declared(criterion_code: str) -> Callable[[Facts], Any]:
+    return lambda f: f.declarations.get(criterion_code)
+
+
+def _casefold(value: Any) -> str | None:
+    text = str(value).strip().casefold()
+    return text or None
+
+
+def _compact_upper(value: Any) -> str | None:
+    text = re.sub(r"\s", "", str(value)).upper()
+    return text or None
+
+
+def _name_tokens(value: Any) -> frozenset[str] | None:
+    """'Om Security & Facility Services Pvt. Ltd.' -> {om, security, and, facility, services}."""
+    text = str(value).casefold().replace("&", " and ")
+    tokens = frozenset(re.findall(r"[a-z0-9]+", text)) - _LEGAL_SUFFIXES
+    return tokens or None
+
+
+def _activity_roles(value: Any) -> frozenset[str] | None:
+    text = str(value).casefold()
+    if not text.strip():
+        return None
+    roles = {role for role, stem in (("manufacturer", "manufactur"), ("trader", "trad")) if stem in text}
+    return frozenset(roles or {"other"})
+
+
+def _declared_role(value: Any) -> frozenset[str] | None:
+    text = str(value).strip().casefold()
+    if text == "manufacturer":
+        return frozenset({"manufacturer"})
+    if text in ("trader", "trading"):
+        return frozenset({"trader"})
     return None
 
 
-def _eval_declaration_document_consistency(criterion: dict, facts: Facts) -> CriterionOutcome:
-    comparisons: dict[str, dict] = {}
-    matches = 0
-    compared = 0
+def _recognized_status(value: Any) -> bool:
+    return str(value).strip().casefold() in ("valid", "active", "recognized")
 
-    # The document leg of the three-way check: Phase 1 has no real OCR (see
-    # app/services/ocr.py), so document_cross_check -- the fixture's pre-computed
-    # document-vs-portal comparison -- stands in for what OCR would otherwise feed here.
-    for entry in facts.document_cross_check:
-        match = entry.get("match")
-        doc_type = entry.get("doc_type", "document")
-        comparisons[f"document:{doc_type}"] = {
-            "declared": None,
-            "portal": None,
-            "document_match": match,
-            "note": entry.get("note"),
-        }
-        if match is not None:
-            compared += 1
-            matches += int(match)
 
-    for criterion_code, declared_value in facts.declarations.items():
-        if criterion_code == "manufacturer_or_trader_self_declared":
-            activity = str((facts.portal_facts.get("udyam") or {}).get("activity") or "").lower()
-            if not activity:
-                match = None
-            elif declared_value.strip().lower() == "manufacturer":
-                match = "manufactur" in activity
-            elif declared_value.strip().lower() in ("trader", "trading"):
-                match = "trad" in activity
-            else:
-                match = None
-            comparisons[criterion_code] = {
-                "declared": declared_value,
-                "portal": (facts.portal_facts.get("udyam") or {}).get("activity"),
-                "match": match,
-            }
-        elif criterion_code in _DECLARATION_PORTAL_FIELD:
-            portal_value = _DECLARATION_PORTAL_FIELD[criterion_code](facts)
-            match = _declaration_matches_portal(criterion_code, declared_value, portal_value)
-            comparisons[criterion_code] = {
-                "declared": declared_value,
-                "portal": portal_value,
-                "match": match,
-            }
-        else:
+def _still_valid(value: Any) -> bool | None:
+    try:
+        return date.fromisoformat(str(value)) >= date.today()
+    except ValueError:
+        return None
+
+
+@dataclass(frozen=True)
+class _FactSpec:
+    """One fact that may be stated by the declaration, a document, and/or the portal."""
+
+    key: str
+    equal: Callable[[Any, Any], bool]
+    canon: Callable[[Any], Any]
+    declared: Callable[[Facts], Any] | None = None
+    canon_declared: Callable[[Any], Any] | None = None
+    document_types: tuple[str, ...] = ()
+    document_field: str | None = None
+    canon_document: Callable[[Any], Any] | None = None
+    portal: Callable[[Facts], Any] | None = None
+
+
+_same = lambda a, b: a == b  # noqa: E731
+
+_FACT_SPECS = (
+    _FactSpec(
+        key="enterprise_category",
+        declared=_declared("enterprise_category_self_declared"),
+        document_types=_UDYAM_DOCS,
+        document_field="enterprise_category",
+        portal=_portal("udyam", "category"),
+        canon=_casefold,
+        equal=_same,
+    ),
+    _FactSpec(
+        key="local_content_pct",
+        declared=_declared("local_content_pct_self_declared"),
+        document_types=("MII_LOCAL_CONTENT_SELF_CERTIFICATE",),
+        document_field="local_content_pct",
+        portal=_portal("mii_local_content", "verified_pct_estimate"),
+        canon=_as_float,
+        equal=lambda a, b: abs(a - b) <= _LOCAL_CONTENT_TOLERANCE_PCT,
+    ),
+    _FactSpec(
+        key="startup_recognized",
+        declared=_declared("startup_status_self_declared"),
+        canon_declared=lambda v: "recognized" in str(v).casefold(),
+        document_types=("STARTUP_EMD_EXEMPTION_PROOF",),
+        document_field="valid_until",
+        canon_document=_still_valid,
+        portal=_portal("startup_india", "status"),
+        canon=_recognized_status,
+        equal=_same,
+    ),
+    _FactSpec(
+        key="manufacturer_or_trader",
+        declared=_declared("manufacturer_or_trader_self_declared"),
+        canon_declared=_declared_role,
+        document_types=_UDYAM_DOCS,
+        document_field="activity",
+        portal=_portal("udyam", "activity"),
+        canon=_activity_roles,
+        equal=lambda a, b: bool(a & b),
+    ),
+    _FactSpec(
+        key="gstin",
+        document_types=("GST_CERTIFICATE",),
+        document_field="gstin",
+        portal=_portal("gstn", "gstin"),
+        canon=_compact_upper,
+        equal=_same,
+    ),
+    _FactSpec(
+        key="gst_trade_name",
+        document_types=("GST_CERTIFICATE",),
+        document_field="trade_name",
+        portal=_portal("gstn", "trade_name"),
+        canon=_name_tokens,
+        equal=_same,
+    ),
+    _FactSpec(
+        key="gst_legal_name",
+        document_types=("GST_CERTIFICATE",),
+        document_field="legal_name",
+        portal=_portal("gstn", "legal_name"),
+        canon=_name_tokens,
+        equal=_same,
+    ),
+    _FactSpec(
+        key="pan",
+        document_types=("PAN_CARD",),
+        document_field="pan",
+        portal=_portal("pan", "pan"),
+        canon=_compact_upper,
+        equal=_same,
+    ),
+    _FactSpec(
+        key="udyam_number",
+        document_types=_UDYAM_DOCS,
+        document_field="udyam_number",
+        portal=_portal("udyam", "registration_number"),
+        canon=_compact_upper,
+        equal=_same,
+    ),
+    _FactSpec(
+        key="epfo_establishment_code",
+        document_types=("EPFO_ESIC_COMPLIANCE_CERTIFICATE",),
+        document_field="establishment_code",
+        portal=_portal("epfo_esic", "establishment_code"),
+        canon=_compact_upper,
+        equal=_same,
+    ),
+    _FactSpec(
+        key="dpiit_number",
+        document_types=("STARTUP_EMD_EXEMPTION_PROOF",),
+        document_field="dpiit_number",
+        portal=_portal("startup_india", "recognition_number"),
+        canon=_compact_upper,
+        equal=_same,
+    ),
+)
+
+
+def _compare_fact(spec: _FactSpec, facts: Facts) -> dict | None:
+    """Compares every available pair among declared/document/portal; None if < 2 sources."""
+    sources: dict[str, tuple[Any, Any]] = {}  # name -> (raw value for display, canonical)
+    evidence: dict[str, Any] = {}
+
+    if spec.declared and (raw := spec.declared(facts)) is not None:
+        canon = (spec.canon_declared or spec.canon)(raw)
+        if canon is not None:
+            sources["declared"] = (raw, canon)
+
+    for doc_type in spec.document_types:
+        raw = _extracted_fields(facts, doc_type).get(spec.document_field)
+        if raw is None:
             continue
+        canon = (spec.canon_document or spec.canon)(raw)
+        if canon is not None:
+            sources["document"] = (raw, canon)
+            evidence["document_type"] = doc_type
+            break
 
-        if match is not None:
-            compared += 1
-            matches += int(match)
+    if spec.portal and (raw := spec.portal(facts)) is not None:
+        canon = spec.canon(raw)
+        if canon is not None:
+            sources["portal"] = (raw, canon)
 
-    score = 100.0 if compared == 0 else 100.0 * matches / compared
-    mismatched = [
-        code
-        for code, c in comparisons.items()
-        if c.get("match") is False or c.get("document_match") is False
+    if len(sources) < 2:
+        return None
+
+    names = list(sources)
+    mismatched_pairs = [
+        f"{a}_vs_{b}"
+        for i, a in enumerate(names)
+        for b in names[i + 1 :]
+        if not spec.equal(sources[a][1], sources[b][1])
     ]
-    reason = None
-    if mismatched:
-        reason = f"Declaration/document does not match portal-verified data for: {', '.join(mismatched)}."
+    return {
+        **{name: raw for name, (raw, _) in sources.items()},
+        **evidence,
+        "match": not mismatched_pairs,
+        "mismatched_pairs": mismatched_pairs,
+    }
+
+
+def _eval_declaration_document_consistency(criterion: dict, facts: Facts) -> CriterionOutcome:
+    """Stage 4's three-way check: declaration vs. document vs. portal, per fact.
+
+    A document's real OCR fields feed the "document" leg. The fixture's pre-computed
+    document_cross_check is used only as a placeholder for document types that have no
+    real upload yet, and is superseded as soon as one exists.
+    """
+    comparisons: dict[str, dict] = {}
+    for spec in _FACT_SPECS:
+        if (comparison := _compare_fact(spec, facts)) is not None:
+            comparisons[spec.key] = comparison
+
+    real_uploads = {doc_type for doc_type, result in facts.ocr_facts.items() if result.get("status")}
+    superseded = []
+    for entry in facts.document_cross_check:
+        placeholder_type = entry.get("doc_type", "document")
+        if real_uploads.intersection(_FIXTURE_PLACEHOLDER_FOR.get(placeholder_type, ())):
+            superseded.append(placeholder_type)
+            continue
+        if entry.get("match") is not None:
+            comparisons[f"placeholder:{placeholder_type}"] = {
+                "match": entry["match"],
+                "note": entry.get("note"),
+            }
+
+    unreadable = {
+        doc_type: result.get("error") or result["status"]
+        for doc_type, result in facts.ocr_facts.items()
+        if result.get("status") and result["status"] != "extracted"
+    }
+
+    compared = len(comparisons)
+    matches = sum(1 for c in comparisons.values() if c["match"])
+    score = 100.0 if compared == 0 else 100.0 * matches / compared
+
+    reasons = []
+    if mismatched := [key for key, c in comparisons.items() if not c["match"]]:
+        reasons.append(
+            f"Declaration/document does not match portal-verified data for: {', '.join(mismatched)}."
+        )
+    if unreadable:
+        reasons.append(f"Could not read uploaded document(s): {', '.join(unreadable)}.")
 
     return CriterionOutcome(
         id=criterion["id"],
@@ -321,8 +506,12 @@ def _eval_declaration_document_consistency(criterion: dict, facts: Facts) -> Cri
         passed=None,
         score=score,
         weight=criterion["weight"],
-        evidence={"comparisons": comparisons},
-        reason=reason,
+        evidence={
+            "comparisons": comparisons,
+            "superseded_placeholders": superseded,
+            "unreadable_documents": unreadable,
+        },
+        reason=" ".join(reasons) or None,
     )
 
 

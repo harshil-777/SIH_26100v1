@@ -1,13 +1,25 @@
+import asyncio
+import hashlib
 import uuid
 
 from celery.result import AsyncResult
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.celery_app import celery_app
+from app.config import get_settings
 from app.db.session import get_session
-from app.models import Bid, BidDeclaration, BidDocumentSubmission, Bidder, ComplianceScore, Tender
+from app.models import (
+    Bid,
+    BidDeclaration,
+    BidDocumentSubmission,
+    Bidder,
+    ComplianceScore,
+    Document,
+    DocumentType,
+    Tender,
+)
 from app.schemas.bids import (
     AuditLogEntryOut,
     AuditLogOut,
@@ -18,14 +30,16 @@ from app.schemas.bids import (
     DeclarationOut,
     DecisionIn,
     DecisionOut,
-    DocumentSubmissionIn,
-    DocumentSubmissionOut,
+    DocumentOut,
+    DocumentUploadOut,
     StatusOut,
     VerifyJobOut,
 )
 from app.services.audit import get_audit_log, verify_chain, write_audit_log
+from app.services.object_store import get_object_store
+from app.services.ocr import FILE_EXTENSIONS, detect_file_kind
 from app.services.recommendation import generate_recommendation
-from app.tasks import verify_bid_task
+from app.tasks import enqueue, ocr_document_task, verify_bid_task
 
 router = APIRouter(prefix="/bids", tags=["bids"])
 
@@ -62,42 +76,138 @@ async def create_bid(payload: BidCreate, session: AsyncSession = Depends(get_ses
     return bid
 
 
-@router.post("/{bid_id}/documents", response_model=DocumentSubmissionOut, status_code=201)
-async def register_document_submission(
-    bid_id: str, payload: DocumentSubmissionIn, session: AsyncSession = Depends(get_session)
+async def _upsert_submission(
+    session: AsyncSession,
+    bid: Bid,
+    document_type: str,
+    *,
+    submitted: bool,
+    file_ref: str | None,
+    note: str | None,
 ) -> BidDocumentSubmission:
-    bid = await _get_bid_or_404(session, bid_id)
-
-    existing = (
+    row = (
         await session.execute(
             select(BidDocumentSubmission).where(
-                BidDocumentSubmission.bid_id == bid_id,
-                BidDocumentSubmission.document_type == payload.document_type,
+                BidDocumentSubmission.bid_id == bid.bid_id,
+                BidDocumentSubmission.document_type == document_type,
             )
         )
     ).scalar_one_or_none()
 
-    if existing is not None:
-        existing.submitted = payload.submitted
-        existing.file_ref = payload.file_ref
-        existing.note = payload.note
-        row = existing
-    else:
+    if row is None:
         row = BidDocumentSubmission(
             submission_id=f"S-{uuid.uuid4().hex[:12]}",
             bid_id=bid.bid_id,
             bidder_id=bid.bidder_id,
             tender_id=bid.tender_id,
-            document_type=payload.document_type,
-            submitted=payload.submitted,
-            file_ref=payload.file_ref,
-            note=payload.note,
+            document_type=document_type,
         )
         session.add(row)
-
-    await session.commit()
-    await session.refresh(row)
+    row.submitted = submitted
+    row.file_ref = file_ref
+    row.note = note
     return row
+
+
+@router.post("/{bid_id}/documents", response_model=DocumentUploadOut, status_code=201)
+async def upload_document(
+    bid_id: str,
+    document_type: str = Form(...),
+    note: str | None = Form(None),
+    file: UploadFile | None = File(None),
+    session: AsyncSession = Depends(get_session),
+) -> DocumentUploadOut:
+    """Upload a document for OCR, or omit `file` to record an explicit non-submission."""
+    bid = await _get_bid_or_404(session, bid_id)
+    if await session.get(DocumentType, document_type) is None:
+        raise HTTPException(422, f"Unknown document_type {document_type!r}")
+
+    key = file_hash = kind = size = None
+    if file is not None:
+        max_mb = get_settings().max_upload_mb
+        data = await file.read(max_mb * 1024 * 1024 + 1)
+        if not data:
+            raise HTTPException(400, "Uploaded file is empty")
+        if len(data) > max_mb * 1024 * 1024:
+            raise HTTPException(413, f"File exceeds the {max_mb} MB upload limit")
+        kind = detect_file_kind(data)
+        if kind is None:
+            raise HTTPException(415, "Only PDF, PNG, JPEG and TIFF files are accepted")
+
+        size = len(data)
+        file_hash = hashlib.sha256(data).hexdigest()
+        # Content-addressed: no client-supplied name ever reaches the storage path.
+        key = f"documents/{file_hash}{FILE_EXTENSIONS[kind]}"
+        # Stored before the DB commit, so no row can ever point at a missing file.
+        await asyncio.to_thread(get_object_store().put, key, data)
+
+    submission = await _upsert_submission(
+        session, bid, document_type, submitted=file is not None, file_ref=key, note=note
+    )
+    doc = None
+    if file is not None:
+        doc = Document(bid_id=bid.bid_id, doc_type=document_type, file_url=key, file_hash=file_hash)
+        session.add(doc)
+    await session.commit()
+
+    if doc is None:
+        ocr_status = "not_applicable"
+    elif enqueue(ocr_document_task, args=[str(doc.doc_id)], task_id=f"ocr-{doc.doc_id}"):
+        ocr_status = "queued"
+    else:
+        ocr_status = "pending_verification"
+
+    return DocumentUploadOut(
+        submission_id=submission.submission_id,
+        bid_id=bid.bid_id,
+        document_type=document_type,
+        submitted=submission.submitted,
+        file_ref=submission.file_ref,
+        note=submission.note,
+        doc_id=doc.doc_id if doc else None,
+        file_hash=file_hash,
+        file_kind=kind,
+        size_bytes=size,
+        ocr_status=ocr_status,
+    )
+
+
+@router.get("/{bid_id}/documents", response_model=list[DocumentOut])
+async def list_documents(bid_id: str, session: AsyncSession = Depends(get_session)) -> list[DocumentOut]:
+    await _get_bid_or_404(session, bid_id)
+
+    submissions = (
+        await session.execute(
+            select(BidDocumentSubmission)
+            .where(BidDocumentSubmission.bid_id == bid_id)
+            .order_by(BidDocumentSubmission.document_type)
+        )
+    ).scalars().all()
+    documents = (
+        await session.execute(
+            select(Document).where(Document.bid_id == bid_id).order_by(Document.uploaded_at.asc())
+        )
+    ).scalars().all()
+    latest = {doc.doc_type: doc for doc in documents}
+    store = get_object_store()
+
+    result = []
+    for sub in submissions:
+        doc = latest.get(sub.document_type)
+        result.append(
+            DocumentOut(
+                document_type=sub.document_type,
+                submitted=sub.submitted,
+                file_ref=sub.file_ref,
+                note=sub.note,
+                doc_id=doc.doc_id if doc else None,
+                file_hash=doc.file_hash if doc else None,
+                uploaded_at=doc.uploaded_at if doc else None,
+                is_placeholder=doc is not None and not store.exists(doc.file_url),
+                ocr=doc.ocr_extracted_json if doc else None,
+            )
+        )
+    return result
 
 
 @router.post("/{bid_id}/declarations", response_model=DeclarationOut, status_code=201)
@@ -141,7 +251,8 @@ async def verify_bid(bid_id: str, session: AsyncSession = Depends(get_session)) 
     await _get_bid_or_404(session, bid_id)
     # task_id == bid_id: lets GET /status look up state without a separate jobs table.
     # Re-verifying a bid whose previous run already finished simply replaces that result.
-    verify_bid_task.apply_async(args=[bid_id], task_id=bid_id)
+    if not enqueue(verify_bid_task, args=[bid_id], task_id=bid_id):
+        raise HTTPException(503, "Job queue unavailable (is Redis running?). Try again shortly.")
     return VerifyJobOut(bid_id=bid_id, job_id=bid_id, status="queued")
 
 

@@ -10,6 +10,9 @@ storage/*
 
 node_modules/
 web/dist/
+
+# Output of scripts/make_sample_documents.py
+samples/
 *.tsbuildinfo
 
 # Local-only, not for GitHub

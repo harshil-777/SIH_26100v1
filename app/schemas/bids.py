@@ -1,3 +1,4 @@
+import uuid
 from datetime import datetime
 from decimal import Decimal
 from typing import Any, Literal
@@ -20,22 +21,33 @@ class BidOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
-class DocumentSubmissionIn(BaseModel):
-    document_type: str
-    submitted: bool
-    file_ref: str | None = None
-    note: str | None = None
-
-
-class DocumentSubmissionOut(BaseModel):
+class DocumentUploadOut(BaseModel):
     submission_id: str
     bid_id: str
     document_type: str
     submitted: bool
     file_ref: str | None
     note: str | None
+    doc_id: uuid.UUID | None
+    file_hash: str | None
+    file_kind: str | None
+    size_bytes: int | None
+    # queued: OCR task enqueued now. pending_verification: broker unreachable, so OCR will
+    # run in stage 2 of the next /verify instead. not_applicable: no file was uploaded.
+    ocr_status: Literal["queued", "pending_verification", "not_applicable"]
 
-    model_config = {"from_attributes": True}
+
+class DocumentOut(BaseModel):
+    document_type: str
+    submitted: bool
+    file_ref: str | None
+    note: str | None
+    doc_id: uuid.UUID | None
+    file_hash: str | None
+    uploaded_at: datetime | None
+    # True for seeded rows whose file_ref points at no real stored file.
+    is_placeholder: bool
+    ocr: dict[str, Any] | None
 
 
 class DeclarationIn(BaseModel):

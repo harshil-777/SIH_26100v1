@@ -5,8 +5,9 @@ recomputation over already-persisted facts (bid_document_submissions vs.
 tender_document_requirements, declarations, verification_results), so a crash before stage
 6 loses nothing: rerunning the pipeline recomputes them fresh rather than needing a
 dedicated resume checkpoint. Stages 2 (documents.ocr_extracted_json) and 3
-(verification_results) are the two stages with real persisted state; stage 6
-(compliance_scores) and 8 (audit_log) are the pipeline's durable outputs.
+(verification_results) are the two stages with real persisted state, each committed on
+completion; a rerun skips OCR for documents already extracted. Stage 6 (compliance_scores)
+and 8 (audit_log) are the pipeline's durable outputs.
 """
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -41,8 +42,10 @@ async def run_pipeline(session: AsyncSession, bid: Bid, tender: Tender) -> dict:
     # Stage 1: completeness check
     completeness = await check_completeness(session, tender.tender_id, bid.bid_id)
 
-    # Stage 2: OCR / extraction (no-op in Phase 1 -- see app/services/ocr.py)
+    # Stage 2: OCR / extraction of real uploads (seeded placeholders stay a no-op), committed
+    # so a crash later doesn't throw away slow OCR work.
     ocr_facts = await ocr.run_ocr_stage(session, bid.bid_id)
+    await session.commit()
 
     # Stage 3: portal verification, in parallel, persisted to verification_results.
     # Committed here (not just flushed) so these rows genuinely survive a crash in a
