@@ -8,6 +8,10 @@ pydantic-settings==2.7.0
 celery[redis]==5.4.0
 redis==5.2.1
 python-multipart==0.0.20
+
+# OCR (Phase 2). pytesseract is only a wrapper: the Tesseract binary itself is a system
+# dependency that pip cannot install. Docker image: `apt-get install tesseract-ocr` (already
+# in the Dockerfile). Windows: https://github.com/UB-Mannheim/tesseract/wiki
 pdfplumber==0.11.10
 pytesseract==0.3.13
 pillow==12.3.0

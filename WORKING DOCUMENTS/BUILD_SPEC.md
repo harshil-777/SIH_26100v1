@@ -21,6 +21,10 @@ Load these seed files from the same folder before Phase 1: `dummy_tenders.csv`,
 - **Frontend**: React + TypeScript, Vite, TailwindCSS, shadcn/ui, Recharts.
 - **Object storage**: local filesystem under `./storage/` for dev; interface it behind an
   `ObjectStore` class so swapping to S3/MinIO later is a one-file change.
+- **OCR**: `pdfplumber` reads a PDF's own text layer; `pytesseract` + the Tesseract binary handle
+  images and scanned PDFs (Phase 2). Tesseract is a system dependency, not a pip package — the
+  Docker image installs it (`tesseract-ocr`). Settings, all optional: `TESSERACT_CMD` (path, only
+  if not on `PATH`), `MAX_UPLOAD_MB` (default 10), `OCR_MAX_PAGES` (default 5).
 - **Containerization**: `docker-compose.yml` with services `api`, `worker`, `postgres`, `redis`,
   `web`.
 
@@ -38,12 +42,15 @@ Load these seed files from the same folder before Phase 1: `dummy_tenders.csv`,
     orchestrator.py    # runs the per-bid pipeline (§7)
     rule_engine.py      # evaluates tender_document_requirements + criteria JSON (§8)
     scoring.py           # compliance score + risk band
-    ocr.py                # document extraction
+    ocr.py                # document extraction: text layer / Tesseract + field parsing (§7 stage 2)
+    object_store.py       # ObjectStore interface + LocalObjectStore (§5)
     recommendation.py     # LLM call, structured input only
   /db
     seed.py             # loads the six seed files into Postgres
     migrations/          # alembic
   main.py
+/scripts
+  make_sample_documents.py  # generates sample certificates for exercising uploads + OCR
 /web                  # React app
 /storage              # uploaded files (dev only)
 docker-compose.yml
@@ -274,9 +281,26 @@ orchestrator:
 def get_adapter(source_name: str) -> VerificationAdapter: ...
 ```
 
+Uploaded files go through one storage interface, so nothing outside it knows they live on local
+disk (Phase 2):
+
+```python
+# app/services/object_store.py
+class ObjectStore(Protocol):
+    def put(self, key: str, data: bytes) -> None: ...
+    def get(self, key: str) -> bytes: ...
+    def exists(self, key: str) -> bool: ...
+
+def get_object_store() -> ObjectStore: ...   # LocalObjectStore(STORAGE_DIR) today
+```
+
+Keys are opaque strings. `LocalObjectStore` must reject any key that resolves outside its root and
+write atomically (temp file, then rename). Uploads use content-addressed keys,
+`documents/<sha256><ext>`, so no client-supplied filename ever reaches the filesystem.
+
 ---
 
-## 6. API endpoints (Phase 1 minimum set)
+## 6. API endpoints (Phase 1 minimum set, plus Phase 2 uploads)
 
 | Method | Path | Purpose |
 |---|---|---|
@@ -284,7 +308,8 @@ def get_adapter(source_name: str) -> VerificationAdapter: ...
 | GET | `/tenders/{tender_id}` | Tender detail |
 | GET | `/tenders/{tender_id}/document-requirements` | List `tender_document_requirements` for it |
 | POST | `/bids` | Create a bid (bidder + tender) |
-| POST | `/bids/{bid_id}/documents` | Register a document submission (multipart upload in Phase 2; Phase 1 can accept a file reference) |
+| POST | `/bids/{bid_id}/documents` | Multipart upload of one document (Phase 2 — replaces Phase 1's JSON file-reference form). Details below |
+| GET | `/bids/{bid_id}/documents` | Each submission with its latest upload and OCR result; `is_placeholder` marks seeded rows with no stored file |
 | POST | `/bids/{bid_id}/declarations` | Submit/update `bid_declarations` rows |
 | POST | `/bids/{bid_id}/verify` | Enqueue the orchestrator pipeline (§7) as a Celery task; returns immediately with a job id |
 | GET | `/bids/{bid_id}/status` | Poll job/pipeline status |
@@ -292,6 +317,25 @@ def get_adapter(source_name: str) -> VerificationAdapter: ...
 | GET | `/bids/{bid_id}/audit-log` | Full hash-chained history for this bid |
 | POST | `/bids/{bid_id}/decision` | Officer action: `qualify` / `disqualify` / `request_clarification`; writes to `audit_log` |
 | GET | `/dashboard/bids?tender_id=` | List view: bid, bidder, score, risk badge, status |
+
+**`POST /bids/{bid_id}/documents` contract.** Form fields: `document_type` (a `document_types`
+code), `file` (optional), `note` (optional). Omitting `file` records an explicit non-submission
+(`submitted = FALSE`), which overrides any earlier upload of that type. Uploading again for the
+same `document_type` replaces the bid's submission (one `bid_document_submissions` row per bid +
+type); every upload is kept as its own `documents` row and only the latest counts.
+
+- The file type is decided from the leading bytes (PDF, PNG, JPEG, TIFF), never from the
+  client's content-type or filename.
+- The file is written to the `ObjectStore` before the DB commit, so no row ever references a
+  missing file. `file_ref` and `documents.file_url` hold the store key; `documents.file_hash`
+  holds the SHA-256.
+- Errors: `404` unknown bid, `422` unknown `document_type`, `400` empty file, `415` unsupported
+  type, `413` over `MAX_UPLOAD_MB`.
+- `201` returns `ocr_status`: `queued` (an `ocr_document` Celery task was enqueued),
+  `pending_verification` (broker unreachable — the upload still succeeded and OCR runs in stage 2
+  of the next `/verify`), or `not_applicable` (no file).
+- Enqueueing must never hang a request when Redis is down: publishing uses a bounded connection
+  attempt, and `POST /bids/{bid_id}/verify` answers `503` instead of blocking.
 
 ---
 
@@ -304,14 +348,40 @@ on (so a crash mid-pipeline can resume, not restart):
    `tender_document_requirements` for this bid's tender. Missing mandatory items → immediate
    mandatory-failure flags, still continue the pipeline (the officer should see everything, not
    just the first failure).
-2. **OCR / extraction** — for each `submitted=TRUE` document, run `services/ocr.py`, write result
-   to `documents.ocr_extracted_json`. Phase 1 with seed data: this step is a no-op read of
-   pre-populated `ocr_extracted_json` since there are no real files yet.
+2. **OCR / extraction** — for each doc_type the bid currently marks `submitted=TRUE`, take its
+   latest `documents` row and run `services/ocr.py`, writing the result to
+   `documents.ocr_extracted_json`. Seeded placeholder rows (no stored file behind `file_url`) are
+   skipped, so seed-only bids are unaffected. Committed on completion (slow work must survive a
+   later crash), and skipped on rerun for a document whose `file_hash` already has a result.
+   - Text comes from the PDF text layer when it has at least ~20 non-whitespace characters, else
+     each page (up to `OCR_MAX_PAGES`) is rasterised at 300 dpi and OCR'd; images always use
+     Tesseract.
+   - Extraction never raises. The stored JSON carries `status` (`extracted` | `no_text` |
+     `failed` | `ocr_unavailable`), `method` (`pdf_text_layer` | `tesseract` | `pdf_tesseract`),
+     `fields`, `file_hash`, `page_count`, `pages_processed`, `char_count`, `text_excerpt` (first
+     1,500 characters) and `error` when relevant. `ocr_unavailable` (Tesseract not installed) is
+     retried on the next run; the other statuses are final for that file.
+   - `fields` holds whichever of these were found: `gstin`, `pan`, `udyam_number`, `cin`,
+     `establishment_code`, `dpiit_number`, `trade_name`, `legal_name`, `activity`,
+     `enterprise_category`, `local_content_pct`, `valid_until`. A "minimum local content of N%"
+     threshold restated in a certificate is not read as the certified figure.
 3. **Portal verification** — call every adapter in parallel (`asyncio.gather`, not sequential
    awaits) via `get_adapter(source).verify(bidder_id)`, persist each to `verification_results`.
 4. **Three-way cross-verification** — for every criterion with more than one of
    {declaration, document, portal} available, compare. Persist per-criterion match/mismatch to
    `criterion_breakdown_json` (not a separate table — it's an artifact of this bid's scoring run).
+   - The comparisons are per fact, and each compares every pair among whichever sources exist:
+     enterprise category, local-content % (±2 points), startup recognition, manufacturer vs.
+     trader, GSTIN, GST trade name, GST legal name, PAN, Udyam number, EPFO establishment code,
+     DPIIT number. Names are compared as normalised token sets (legal suffixes such as
+     "Pvt Ltd" ignored), so a genuinely different trade name is a mismatch but formatting is not.
+   - The document leg is the real `fields` from stage 2. The seed fixture's pre-computed
+     `document_cross_check` array is only a placeholder for document types with no upload yet;
+     once a real upload of the corresponding type exists it is superseded and dropped (listed
+     under `superseded_placeholders` in the evidence).
+   - A document stage 2 could not read (`failed`, `no_text`, `ocr_unavailable`) is reported under
+     `unreadable_documents` and named in the criterion's reason, but does not lower the score —
+     an unreadable file is not evidence that the bidder's claim is false.
 5. **Rule engine** — evaluate the tender's criteria config (§8) against the accumulated facts.
 6. **Scoring** — `services/scoring.py` computes `overall_score` + `risk_level`, writes
    `compliance_scores`.
@@ -360,9 +430,25 @@ against the mock adapter registry and seeded declarations/submissions, and produ
 `cancelled` status. Running it for `BID-B012-T2026-0001` flags the missing
 `OEM_AUTHORIZATION_LETTER` from the completeness check, not from any adapter.
 
-**Phase 2 — Real uploads + OCR**
+**Phase 2 — Real uploads + OCR** — ✅ complete
 DoD: a real PDF/image upload through `POST /bids/{bid_id}/documents` gets OCR'd, and its extracted
 fields participate in stage 4 (cross-verification) instead of the seeded placeholder JSON.
+
+Verified against the live database:
+- A text-layer PDF, a PNG and an image-only (scanned) PDF all extract correctly.
+- `BID-B009-T2026-0006`: uploading a GST certificate whose trade name differs from the GSTN record
+  replaces the fixture placeholder and the mismatch is detected from the document itself; a
+  matching certificate takes the bid from 28.57 / High to 100 / Low.
+- `BID-B006-T2026-0005`: an MII certificate stating 40% yields the declared 45 / document 40 /
+  portal 38 discrepancy from real extracted values.
+- With no real uploads, all 12 seed bids score identically to Phase 1.
+- Every validation error above, corrupt files, and a later non-submission overriding an earlier
+  upload behave as specified.
+
+Known limits: extraction is regex-based over free text, so a certificate whose labels differ
+from the common government layouts may yield fewer fields (the field is then simply absent, never
+guessed); only the first `OCR_MAX_PAGES` pages are read; `ocr_document` tasks and `/verify` both
+need Redis, and image OCR needs the Tesseract binary (see §1).
 
 **Phase 3 — Dashboard + officer actions**
 DoD: `web/` renders the bid list and bid detail views described in the guide's §10, and
@@ -385,3 +471,6 @@ produce the `expected_ground_truth` outcome noted in `dummy_bidders.csv` when ru
 - No bidder-facing portal/auth flow beyond what's needed to attach documents to a `bid_id` — the
   Procurement Officer dashboard is the actual deliverable.
 - No production Kubernetes manifests — `docker-compose.yml` is sufficient through Phase 4.
+- No cloud OCR service (Google Vision, Textract, ...) — Tesseract only. No document-forgery
+  detection or virus scanning of uploads; a name/number mismatch against the portal is the only
+  authenticity signal the system produces.
