@@ -42,8 +42,11 @@ function humanize(code: string): string {
 export const criterionLabel = (id: string) => CRITERION_LABELS[id] ?? humanize(id);
 export const sourceLabel = (source: string) => SOURCE_LABELS[source] ?? humanize(source);
 export const documentTypeLabel = (code: string) => humanize(code);
-export const factLabel = (key: string) =>
-  key.startsWith("document:") ? `${documentTypeLabel(key.slice("document:".length))} (document check)` : humanize(key.replace(/_self_declared$/, ""));
+export const factLabel = (key: string) => {
+  const [prefix, rest] = key.includes(":") ? key.split(":", 2) : [null, key];
+  if (prefix === "placeholder" || prefix === "document") return `${documentTypeLabel(rest)} (document check)`;
+  return humanize(key.replace(/_self_declared$/, ""));
+};
 
 export const formatScore = (score: number | null) =>
   score === null ? "—" : Number.isInteger(score) ? String(score) : score.toFixed(2);

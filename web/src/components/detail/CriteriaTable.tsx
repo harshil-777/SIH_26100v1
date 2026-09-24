@@ -13,7 +13,11 @@ const EVIDENCE_LABELS: Record<string, string> = {
   portal_verified_pct: "Portal-verified %",
   declared_employee_count: "Declared employees",
   epfo_registered_employee_count: "EPFO-registered employees",
+  portal_category: "Udyam category",
+  udyam_status: "Udyam status",
 };
+
+type DocRef = { buyer_label?: string | null; document_type: string; why?: string };
 
 export function CriteriaTable({ criteria }: { criteria: Criterion[] }) {
   const mandatory = criteria.filter((c) => c.type === "mandatory");
@@ -65,7 +69,8 @@ function GroupRow({ label }: { label: string }) {
 function CriterionRow({ criterion, totalWeight }: { criterion: Criterion; totalWeight: number }) {
   const failed = criterion.type === "mandatory" ? criterion.passed === false : (criterion.score ?? 100) < 100;
   const evidence = Object.entries(criterion.evidence ?? {}).filter(([key]) => key in EVIDENCE_LABELS);
-  const missing = (criterion.evidence?.missing_documents as { buyer_label?: string; document_type: string }[] | undefined) ?? [];
+  const missing = (criterion.evidence?.missing_documents as DocRef[] | undefined) ?? [];
+  const notApplicable = (criterion.evidence?.not_applicable_documents as DocRef[] | undefined) ?? [];
 
   return (
     <tr className={cn(failed && "bg-red-50/40")}>
@@ -97,8 +102,17 @@ function CriterionRow({ criterion, totalWeight }: { criterion: Criterion; totalW
             ))}
           </ul>
         )}
+        {notApplicable.length > 0 && (
+          <ul className="mt-1 space-y-0.5 text-slate-500">
+            {notApplicable.map((doc) => (
+              <li key={doc.document_type}>
+                <span className="font-medium text-slate-700">{doc.buyer_label ?? doc.document_type}</span> — not applicable. {doc.why}
+              </li>
+            ))}
+          </ul>
+        )}
         {criterion.id === "declaration_document_consistency" && <span>See cross-verification below.</span>}
-        {evidence.length === 0 && missing.length === 0 && criterion.id !== "declaration_document_consistency" && "—"}
+        {evidence.length === 0 && missing.length === 0 && notApplicable.length === 0 && criterion.id !== "declaration_document_consistency" && "—"}
       </td>
     </tr>
   );

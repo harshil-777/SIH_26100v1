@@ -10,7 +10,9 @@ const OCR_METHOD: Record<string, string> = {
   pdf_tesseract: "Scanned PDF · Tesseract",
 };
 
-export function DocumentsPanel({ documents }: { documents: BidDocument[] }) {
+// notApplicable: document types the rule engine ruled out for this bidder (e.g. an MSE exemption
+// proof from a non-MSE), so their absence isn't flagged as missing here either.
+export function DocumentsPanel({ documents, notApplicable = [] }: { documents: BidDocument[]; notApplicable?: string[] }) {
   return (
     <Card>
       <CardHeader title="Documents" description="What the bidder submitted, and what OCR read from each upload." />
@@ -19,7 +21,7 @@ export function DocumentsPanel({ documents }: { documents: BidDocument[] }) {
       ) : (
         <ul className="divide-y divide-slate-100">
           {documents.map((doc) => (
-            <DocumentRow key={doc.document_type} doc={doc} />
+            <DocumentRow key={doc.document_type} doc={doc} notApplicable={notApplicable.includes(doc.document_type)} />
           ))}
         </ul>
       )}
@@ -27,7 +29,7 @@ export function DocumentsPanel({ documents }: { documents: BidDocument[] }) {
   );
 }
 
-function DocumentRow({ doc }: { doc: BidDocument }) {
+function DocumentRow({ doc, notApplicable }: { doc: BidDocument; notApplicable: boolean }) {
   const Icon = !doc.submitted ? FileX2 : doc.is_placeholder ? FileText : doc.ocr?.status === "extracted" ? FileCheck2 : FileQuestion;
   const fields = Object.entries(doc.ocr?.fields ?? {});
 
@@ -35,7 +37,7 @@ function DocumentRow({ doc }: { doc: BidDocument }) {
     <li className="px-5 py-3">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="flex items-start gap-2.5">
-          <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${doc.submitted ? "text-slate-500" : "text-red-600"}`} aria-hidden />
+          <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${doc.submitted || notApplicable ? "text-slate-500" : "text-red-600"}`} aria-hidden />
           <div>
             <div className="text-sm font-medium text-slate-900">{documentTypeLabel(doc.document_type)}</div>
             <div className="text-xs text-slate-500">
@@ -50,7 +52,7 @@ function DocumentRow({ doc }: { doc: BidDocument }) {
             </div>
           </div>
         </div>
-        <DocumentStatus doc={doc} />
+        <DocumentStatus doc={doc} notApplicable={notApplicable} />
       </div>
 
       {fields.length > 0 && (
@@ -76,8 +78,8 @@ function DocumentRow({ doc }: { doc: BidDocument }) {
   );
 }
 
-function DocumentStatus({ doc }: { doc: BidDocument }) {
-  if (!doc.submitted) return <Badge tone="danger">Missing</Badge>;
+function DocumentStatus({ doc, notApplicable }: { doc: BidDocument; notApplicable: boolean }) {
+  if (!doc.submitted) return notApplicable ? <Badge tone="neutral">Not applicable</Badge> : <Badge tone="danger">Missing</Badge>;
   if (doc.is_placeholder) return <Badge tone="neutral">Placeholder</Badge>;
   if (!doc.ocr) return <Badge tone="info">OCR pending</Badge>;
   return <OcrBadge ocr={doc.ocr} />;

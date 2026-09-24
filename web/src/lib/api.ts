@@ -75,8 +75,9 @@ export type Criterion = {
   evidence: Record<string, unknown>;
 };
 
-// One fact compared across declaration / document / portal. Seed placeholders carry only
-// `note` + `document_match`; real comparisons carry the values and which pairs disagreed.
+// One fact compared across declaration / document / portal. Seed placeholders (keyed
+// "placeholder:<doc>", or carrying `document_match` in pre-Phase-2 scores) have only a verdict
+// and a note; real comparisons carry the values and which pairs disagreed.
 export type Comparison = {
   match?: boolean;
   document_match?: boolean;
@@ -141,6 +142,14 @@ export type AuditLog = {
   entries: AuditEntry[];
 };
 
+export type AuditVerification = {
+  valid: boolean;
+  chains_checked: number;
+  entries_checked: number;
+  breaks: { bid_id: string | null; log_id: number; problem: string }[];
+  checked_at: string;
+};
+
 export type JobStatus = {
   bid_id: string;
   job_status: "not_started" | "queued" | "running" | "success" | "failed";
@@ -195,6 +204,7 @@ export const api = {
   getBid: (bidId: string) => request<BidDetail>(`/bids/${encodeURIComponent(bidId)}`),
   getDocuments: (bidId: string) => request<BidDocument[]>(`/bids/${encodeURIComponent(bidId)}/documents`),
   getAuditLog: (bidId: string) => request<AuditLog>(`/bids/${encodeURIComponent(bidId)}/audit-log`),
+  verifyAuditLog: () => request<AuditVerification>("/audit/verify"),
   getJobStatus: (bidId: string) => request<JobStatus>(`/bids/${encodeURIComponent(bidId)}/status`),
 
   // 404 here just means the bid has never been verified -- not an error for the UI.

@@ -35,6 +35,26 @@ _FIXTURE_PLACEHOLDER_FOR = {
     "dpiit_recognition_certificate": ("STARTUP_EMD_EXEMPTION_PROOF",),
 }
 
+_MSME_CATEGORIES = {"Micro", "Small", "Medium"}
+
+# Wording for reasons shown to the officer; the comparison keys themselves stay machine-stable.
+_FACT_LABELS = {
+    "enterprise_category": "enterprise category",
+    "local_content_pct": "local content %",
+    "startup_recognized": "startup recognition",
+    "manufacturer_or_trader": "manufacturer vs. trader",
+    "gstin": "GSTIN",
+    "gst_trade_name": "GST trade name",
+    "gst_legal_name": "GST legal name",
+    "pan": "PAN",
+    "udyam_number": "Udyam number",
+    "epfo_establishment_code": "EPFO establishment code",
+    "dpiit_number": "DPIIT number",
+}
+
+# Documents that only a bidder claiming an MSE/startup exemption or preference can produce.
+_EXEMPTION_PROOF_DOCS = {"EMD_EXEMPTION_PROOF"}
+
 _LEGAL_SUFFIXES = {"private", "pvt", "limited", "ltd", "llp", "m/s", "ms", "the"}
 
 
@@ -159,23 +179,52 @@ def _eval_pan_valid(criterion: dict, facts: Facts) -> CriterionOutcome:
     )
 
 
+def _document_label(doc_type: str) -> str:
+    return doc_type.replace("_", " ").lower()
+
+
+def _fact_label(key: str) -> str:
+    if key.startswith("placeholder:"):
+        return f"{_document_label(key.removeprefix('placeholder:'))} (seeded document check)"
+    return _FACT_LABELS.get(key, key.replace("_", " "))
+
+
+def _can_claim_mse_or_startup_exemption(facts: Facts) -> bool:
+    udyam = facts.portal_facts.get("udyam") or {}
+    startup = facts.portal_facts.get("startup_india") or {}
+    is_mse = _recognized_status(udyam.get("status")) and udyam.get("category") in _MSME_CATEGORIES
+    return is_mse or _recognized_status(startup.get("status"))
+
+
 def _eval_document_completeness(criterion: dict, facts: Facts) -> CriterionOutcome:
-    passed = facts.completeness.passed
-    missing = [
-        {"document_type": m.document_type, "buyer_label": m.buyer_label}
-        for m in facts.completeness.missing
-    ]
+    # An exemption/preference proof can only come from a bidder the portals show is eligible to
+    # claim one. When they show it isn't, the missing proof is a symptom of ineligibility --
+    # judged on its own by msme_eligibility for reserved tenders -- not a paperwork gap, and
+    # reporting it as one would give the officer the wrong reason (seed bid B010).
+    claimable = _can_claim_mse_or_startup_exemption(facts)
+    gaps, not_applicable = [], []
+    for m in facts.completeness.missing:
+        entry = {"document_type": m.document_type, "buyer_label": m.buyer_label}
+        (not_applicable if m.document_type in _EXEMPTION_PROOF_DOCS and not claimable else gaps).append(entry)
+
+    passed = not gaps
     reason = None
     if not passed:
-        labels = ", ".join(m.buyer_label or m.document_type for m in facts.completeness.missing)
+        labels = ", ".join(g["buyer_label"] or g["document_type"] for g in gaps)
         reason = f"Missing mandatory document(s): {labels}"
+    evidence: dict[str, Any] = {"missing_documents": gaps}
+    if not_applicable:
+        evidence["not_applicable_documents"] = [
+            {**entry, "why": "Bidder is not a portal-verified MSE or recognized startup, so this exemption proof cannot apply."}
+            for entry in not_applicable
+        ]
     return CriterionOutcome(
         id=criterion["id"],
         type="mandatory",
         passed=passed,
         score=None,
         weight=None,
-        evidence={"missing_documents": missing},
+        evidence=evidence,
         reason=reason,
     )
 
@@ -493,12 +542,12 @@ def _eval_declaration_document_consistency(criterion: dict, facts: Facts) -> Cri
     score = 100.0 if compared == 0 else 100.0 * matches / compared
 
     reasons = []
-    if mismatched := [key for key, c in comparisons.items() if not c["match"]]:
+    if mismatched := [_fact_label(key) for key, c in comparisons.items() if not c["match"]]:
         reasons.append(
             f"Declaration/document does not match portal-verified data for: {', '.join(mismatched)}."
         )
     if unreadable:
-        reasons.append(f"Could not read uploaded document(s): {', '.join(unreadable)}.")
+        reasons.append(f"Could not read uploaded document(s): {', '.join(map(_document_label, unreadable))}.")
 
     return CriterionOutcome(
         id=criterion["id"],
@@ -516,25 +565,37 @@ def _eval_declaration_document_consistency(criterion: dict, facts: Facts) -> Cri
 
 
 def _eval_msme_eligibility(criterion: dict, facts: Facts) -> CriterionOutcome:
-    category = (facts.portal_facts.get("udyam") or {}).get("category")
-    eligible_categories = {"Micro", "Small", "Medium"}
-    passed_categories = category in eligible_categories
-    score = 100.0 if passed_categories else 0.0
+    udyam = facts.portal_facts.get("udyam") or {}
+    category = udyam.get("category") if _recognized_status(udyam.get("status")) else None
+    eligible = category in _MSME_CATEGORIES
     reason = None
-    if not passed_categories:
+    if not eligible:
         reason = (
-            f"Portal-verified enterprise category is "
-            f"'{category or 'not registered on Udyam'}', not eligible for this "
-            "MSME-reserved tender."
+            f"Ineligible for this MSME-reserved tender: portal-verified enterprise category is "
+            f"'{category or 'not registered on Udyam'}'. This is a tender eligibility bar, not a "
+            "statutory compliance failure."
         )
+    evidence = {"portal_category": category, "udyam_status": udyam.get("status")}
 
+    # Tenders seeded before reservation became a hard bar carry it as a graded criterion;
+    # score those the old way so an existing tender's config keeps meaning what it said.
+    if criterion.get("type") == "graded":
+        return CriterionOutcome(
+            id=criterion["id"],
+            type="graded",
+            passed=None,
+            score=100.0 if eligible else 0.0,
+            weight=criterion["weight"],
+            evidence=evidence,
+            reason=reason,
+        )
     return CriterionOutcome(
         id=criterion["id"],
-        type="graded",
-        passed=None,
-        score=score,
-        weight=criterion["weight"],
-        evidence={"portal_category": category},
+        type="mandatory",
+        passed=eligible,
+        score=None,
+        weight=None,
+        evidence=evidence,
         reason=reason,
     )
 

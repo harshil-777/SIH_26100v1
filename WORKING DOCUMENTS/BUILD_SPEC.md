@@ -51,6 +51,8 @@ Load these seed files from the same folder before Phase 1: `dummy_tenders.csv`,
   main.py
 /scripts
   make_sample_documents.py  # generates sample certificates for exercising uploads + OCR
+  check_ground_truth.py     # runs all 12 seed bids end to end, checks expected_ground_truth (Phase 4)
+  verify_audit_chain.py     # walks the whole audit_log straight from the DB, confirms no break (Phase 4)
 /web                  # React app
 /storage              # uploaded files (dev only)
 docker-compose.yml
@@ -318,6 +320,7 @@ write atomically (temp file, then rename). Uploads use content-addressed keys,
 | GET | `/bids/{bid_id}/audit-log` | Full hash-chained history for this bid |
 | POST | `/bids/{bid_id}/decision` | Officer action: `qualify` / `disqualify` / `request_clarification`; writes to `audit_log`. `actor` is required; `reason` is required for `disqualify` and `request_clarification` (422 otherwise). The hashed payload carries `decision`, `reason`, `actor`, `previous_status` and `new_status` |
 | GET | `/dashboard/bids?tender_id=` | List view: bid, bidder, score, risk badge, status |
+| GET | `/audit/verify` | Recompute every bid's hash chain across the whole `audit_log`; returns `valid`, counts, and each break as `{bid_id, log_id, problem}` (Phase 4) |
 
 **`POST /bids/{bid_id}/documents` contract.** Form fields: `document_type` (a `document_types`
 code), `file` (optional), `note` (optional). Omitting `file` records an explicit non-submission
@@ -414,6 +417,19 @@ Scoring: any `mandatory` criterion failing caps `overall_score` at 40 and forces
 `risk_level = 'Non-Compliant'`. Otherwise sum `graded` criteria by weight into a 0–100 score, band
 into Low (≥85) / Medium (60–84) / High (<60).
 
+Beyond this example, `build_eligibility_rules_typed` (`app/db/fixtures.py`) adds
+`declaration_document_consistency` (graded, 0.25) to every tender, and
+`{"id": "msme_eligibility", "type": "mandatory"}` to MSME-reserved tenders (Phase 4; migration
+`0002` rewrote the stored configs, which had it as graded). A reservation bars non-MSME bidders
+outright, so ineligibility must disqualify with that reason rather than lower a weighted score.
+The evaluator still honours a `graded` `msme_eligibility` if a tender's config says so.
+
+`document_completeness` does not count a missing `EMD_EXEMPTION_PROOF` as a gap when the portals
+show the bidder is neither an MSE (valid Udyam, Micro/Small/Medium) nor a recognized startup: such
+a bidder cannot produce that proof, so its absence is a symptom of ineligibility (handled by
+`msme_eligibility` on reserved tenders), not a paperwork gap. It is listed under
+`not_applicable_documents` in the criterion's evidence with the reason.
+
 ---
 
 ## 9. Build order — phases and Definition of Done
@@ -477,10 +493,46 @@ B009 shows the GST trade-name mismatch from the real upload; B012 shows the miss
 the mandatory failure; disqualifying B002 is blocked until a reason is entered, then appends a
 linked entry and the chain stays intact; no horizontal scroll at 390px.
 
-**Phase 4 — Polish**
+**Phase 4 — Polish** — ✅ complete
 DoD: recommendation text renders on the dashboard labeled advisory-only; hash chain is visibly
 verifiable (an endpoint or script that walks `audit_log` and confirms no break); all 12 seed bids
 produce the `expected_ground_truth` outcome noted in `dummy_bidders.csv` when run end to end.
+
+- **Recommendation**: rendered on the bid detail page in a panel labelled "AI-generated · advisory
+  only", separate from the officer's decision. The text now uses readable criterion and fact names
+  (not raw ids such as `declaration_document_consistency`). It is still the deterministic
+  template in `services/recommendation.py`; no LLM is wired in (see Known limits).
+- **Hash chain**: `services/audit.py` walks each bid's chain in `log_id` order and checks two things
+  per entry: `prev_hash` equals the previous entry's `curr_hash` (catches a deleted, inserted or
+  reordered entry) and `curr_hash` recomputes from its own `prev_hash` + payload (catches an edited
+  payload). Exposed three ways: `GET /audit/verify` (whole log), `scripts/verify_audit_chain.py`
+  (reads the DB directly, exits 1 on a break), and an "Audit log intact / tampering detected" panel
+  on the dashboard's bid list that re-checks on demand and links to any broken bid. Writes are
+  serialised per bid (the bid row is locked while the next entry is appended), so concurrent
+  writers can't fork a chain.
+- **Ground truth**: `scripts/check_ground_truth.py` re-verifies all 12 seed bids through the API
+  and checks each against its scenario, with `expected_ground_truth`'s free text pinned down as
+  explicit checks — the risk band, which mandatory criterion must be the one that fails (so a bid
+  can't pass for the wrong reason), and which flag must be raised. Result: **12/12**.
+  The one fix it needed was B010 (`not_msme_ineligible_for_reservation`): it was disqualified for
+  a "missing document", while its fixture says statutory checks pass and it is ineligible only on
+  the tender's MSME reservation — see §8 for the rule change.
+
+Verified against the live database: 12/12 ground-truth run end to end; `/audit/verify` and the
+script both report 12 intact chains; editing an entry's payload and deleting a mid-chain entry
+(inside a rolled-back transaction) were each detected at the right `log_id`; the dashboard shows
+the intact and the broken state (the latter simulated in the browser), B010's new reason, and its
+exemption proof as "Not applicable" rather than "Missing".
+
+Known limits:
+- The chain proves integrity *within* what is stored. Deleting a bid's newest entries, or its
+  whole chain, leaves nothing to compare against; detecting that needs the latest hash anchored
+  outside the database (e.g. periodically published or signed).
+- `actor`, `action` and `timestamp` are columns outside the hashed payload. Officer decisions
+  copy `actor` into the payload (Phase 3), so it is covered for them, not for orchestrator rows.
+- The recommendation is a deterministic template. §7 stage 7 envisages an LLM over the structured
+  breakdown; that needs an API key and, per §1, must run inside the Celery task with its output
+  stored for display (it is currently computed per request).
 
 ---
 

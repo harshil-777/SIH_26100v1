@@ -66,9 +66,11 @@ export function CrossCheckTable({ criterion }: { criterion: Criterion | undefine
 }
 
 function ComparisonRow({ fact, comparison }: { fact: string; comparison: Comparison }) {
-  // Seed-fixture placeholders have no per-source values, just a verdict and a note.
-  const isPlaceholder = comparison.match === undefined && comparison.document_match !== undefined;
-  const ok = isPlaceholder ? comparison.document_match! : comparison.match ?? null;
+  // Seed-fixture placeholders have no per-source values, just a verdict and a note. Current
+  // runs key them "placeholder:<doc>"; scores from before Phase 2 used document_match instead.
+  const isPlaceholder =
+    fact.startsWith("placeholder:") || (comparison.match === undefined && comparison.document_match !== undefined);
+  const ok = comparison.match ?? comparison.document_match ?? null;
   const mismatchedLegs = new Set(
     (comparison.mismatched_pairs ?? []).flatMap((pair) => pair.split("_vs_") as Leg[]),
   );
@@ -97,8 +99,8 @@ function ComparisonRow({ fact, comparison }: { fact: string; comparison: Compari
       <td className="px-5 py-3 align-top font-medium text-slate-900">{factLabel(fact)}</td>
       {isPlaceholder ? (
         <td colSpan={3} className="px-3 py-3 align-top text-xs text-slate-600">
-          {comparison.note ?? "—"}
-          <div className="mt-0.5 text-[11px] text-slate-400">Seeded check — no document uploaded yet</div>
+          {comparison.note}
+          <div className={cn("text-[11px] text-slate-400", comparison.note && "mt-0.5")}>Seeded check — no document uploaded yet</div>
         </td>
       ) : (
         <>

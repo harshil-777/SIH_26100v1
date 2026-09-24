@@ -4,7 +4,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.routers import bids, dashboard, tenders
+from app.routers import audit, bids, dashboard, tenders
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +34,7 @@ app.add_middleware(
 app.include_router(dashboard.router)
 app.include_router(tenders.router)
 app.include_router(bids.router)
+app.include_router(audit.router)
 
 
 @app.get("/health")

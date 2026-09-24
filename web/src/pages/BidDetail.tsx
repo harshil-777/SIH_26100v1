@@ -106,7 +106,11 @@ export default function BidDetail({ bidId }: { bidId: string }) {
   }
 
   const { bid, score, documents, audit } = data;
-  const consistency = score?.criterion_breakdown_json.criteria.find((c) => c.id === "declaration_document_consistency");
+  const criteria = score?.criterion_breakdown_json.criteria ?? [];
+  const consistency = criteria.find((c) => c.id === "declaration_document_consistency");
+  const notApplicableDocs = (
+    (criteria.find((c) => c.id === "document_completeness")?.evidence.not_applicable_documents as { document_type: string }[] | undefined) ?? []
+  ).map((doc) => doc.document_type);
 
   return (
     <div className="space-y-5">
@@ -146,7 +150,7 @@ export default function BidDetail({ bidId }: { bidId: string }) {
               </CardBody>
             </Card>
           )}
-          <DocumentsPanel documents={documents} />
+          <DocumentsPanel documents={documents} notApplicable={notApplicableDocs} />
           <PortalChecks results={bid.verification_results} />
         </div>
 

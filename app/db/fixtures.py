@@ -130,8 +130,9 @@ def build_eligibility_rules_typed(
 ) -> dict[str, Any]:
     """Derive the section 8 criteria blob from a tender's own policy flags.
 
-    The 4 mandatory criteria are constant (BUILD_SPEC.md section 8's literal example).
-    The graded set is switched on by msme_reserved / MII threshold / EPFO threshold.
+    The 4 mandatory criteria are constant (BUILD_SPEC.md section 8's literal example), plus
+    msme_eligibility as a 5th mandatory one on MSME-reserved tenders. The graded set is
+    switched on by the MII threshold / EPFO threshold.
 
     OEM authorization is deliberately not a separate graded criterion: every tender that
     sets requires_oem_authorization also seeds OEM_AUTHORIZATION_LETTER as a *mandatory*
@@ -193,11 +194,12 @@ def build_eligibility_rules_typed(
     )
 
     if msme_reserved:
+        # A reservation is a bar, not a preference: a non-MSME bid is ineligible outright, so
+        # this is mandatory rather than a weighted input to the score.
         criteria.append(
             {
                 "id": "msme_eligibility",
-                "type": "graded",
-                "weight": 0.20,
+                "type": "mandatory",
                 "source": "verification_results.udyam.category",
             }
         )

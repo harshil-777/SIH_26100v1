@@ -1,5 +1,6 @@
 import { ArrowDown, ArrowUp, ArrowUpDown, ChevronRight, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { AuditIntegrity } from "@/components/AuditIntegrity";
 import { RiskBadge, StatusBadge } from "@/components/badges";
 import { Card } from "@/components/ui/card";
 import { api, toNumber, type BidStatus, type DashboardBid, type RiskLevel } from "@/lib/api";
@@ -82,6 +83,8 @@ export default function BidList() {
       {error && (
         <Card className="border-red-200 bg-red-50 px-5 py-4 text-sm text-red-800">Failed to load bids: {error}</Card>
       )}
+
+      <AuditIntegrity />
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         {RISK_ORDER.map((key) => (

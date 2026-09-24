@@ -59,15 +59,48 @@ async def get_audit_log(session: AsyncSession, bid_id: str) -> list[AuditLog]:
     ).scalars().all()
 
 
-def verify_chain(rows: list[AuditLog]) -> tuple[bool, list[str]]:
-    """Recomputes each curr_hash from (prev_hash, payload) and checks for breaks."""
-    broken_at: list[str] = []
+def find_breaks(rows: list[AuditLog]) -> list[dict]:
+    """Walk one bid's rows in log_id order; return each break as {log_id, problem}.
+
+    Two independent checks per row: its prev_hash must be the previous row's curr_hash (catches
+    a deleted, inserted or reordered row), and its curr_hash must recompute from its own
+    prev_hash + payload (catches an edited payload). Deleting the newest rows, or a bid's whole
+    chain, leaves nothing to compare against and is not detectable from the table alone.
+    """
+    breaks: list[dict] = []
     expected_prev: str | None = None
     for row in rows:
-        if row.prev_hash != (expected_prev or None):
-            broken_at.append(row.log_id and str(row.log_id))
-        recomputed = compute_curr_hash(row.prev_hash, row.payload_json or {})
-        if recomputed != row.curr_hash:
-            broken_at.append(str(row.log_id))
+        if (row.prev_hash or None) != expected_prev:
+            breaks.append({"log_id": row.log_id, "problem": "prev_hash does not match the previous entry's hash"})
+        if compute_curr_hash(row.prev_hash, row.payload_json or {}) != row.curr_hash:
+            breaks.append({"log_id": row.log_id, "problem": "curr_hash does not match this entry's payload"})
         expected_prev = row.curr_hash
-    return (len(broken_at) == 0, broken_at)
+    return breaks
+
+
+def verify_chain(rows: list[AuditLog]) -> tuple[bool, list[str]]:
+    """Per-bid verdict for GET /bids/{bid_id}/audit-log: (valid, log_ids of broken entries)."""
+    broken_ids = list(dict.fromkeys(str(b["log_id"]) for b in find_breaks(rows)))
+    return (not broken_ids, broken_ids)
+
+
+async def verify_all_chains(session: AsyncSession) -> dict:
+    """Walk the whole audit_log, one chain per bid, and report every break found."""
+    rows = (
+        await session.execute(select(AuditLog).order_by(AuditLog.bid_id, AuditLog.log_id))
+    ).scalars().all()
+    chains: dict[str | None, list[AuditLog]] = {}
+    for row in rows:
+        chains.setdefault(row.bid_id, []).append(row)
+
+    breaks = [
+        {"bid_id": bid_id, **found}
+        for bid_id, chain in chains.items()
+        for found in find_breaks(chain)
+    ]
+    return {
+        "valid": not breaks,
+        "chains_checked": len(chains),
+        "entries_checked": len(rows),
+        "breaks": breaks,
+    }

@@ -17,7 +17,7 @@ Full architecture and phase-by-phase build spec: [`WORKING DOCUMENTS/BUILD_SPEC.
 | 1 | Core verification pipeline against seed data | ✅ Done |
 | 2 | Real uploads + OCR | ✅ Done |
 | 3 | Dashboard + officer actions (frontend) | ✅ Done |
-| 4 | Polish (recommendation UI, hash-chain viewer) | Not started |
+| 4 | Polish (recommendation UI, hash-chain verification, ground truth 12/12) | ✅ Done |
 
 ## Tech stack
 
@@ -58,6 +58,8 @@ app/
   tasks.py         Celery tasks: the verification pipeline and per-upload OCR
 scripts/
   make_sample_documents.py   Generates sample certificates for testing uploads
+  check_ground_truth.py      Runs all 12 seed bids end to end against their expected outcome
+  verify_audit_chain.py      Walks the whole audit log in the DB and confirms no chain is broken
 web/               React officer dashboard: bid list + bid detail (score, cross-checks,
                    OCR results, portal checks, decision panel, audit chain)
 ```
@@ -74,7 +76,8 @@ web/               React officer dashboard: bid list + bid detail (score, cross-
    name, ...), compares whichever of declaration / document / portal are available. Real
    OCR output replaces the seed fixture's pre-computed `document_cross_check` placeholder
    for any document type that has a real upload
-5. **Rule engine** — evaluates the tender's mandatory/graded criteria against those facts
+5. **Rule engine** — evaluates the tender's mandatory/graded criteria against those facts. On an
+   MSME-reserved tender, MSME eligibility is mandatory: a non-MSME bid is ineligible outright
 6. **Scoring** — any failed mandatory criterion caps the score at 40 and forces
    `Non-Compliant`; otherwise a weighted average of graded criteria bands into
    Low (≥85) / Medium (60–84) / High (<60)
@@ -99,6 +102,7 @@ web/               React officer dashboard: bid list + bid detail (score, cross-
 | GET | `/bids/{bid_id}/audit-log` | Full hash-chained history (chain-verified) |
 | POST | `/bids/{bid_id}/decision` | Officer action: qualify / disqualify / request clarification (a reason is required for the last two) |
 | GET | `/dashboard/bids?tender_id=` | List view for the procurement officer dashboard |
+| GET | `/audit/verify` | Recompute every bid's hash chain across the whole audit log and report any break |
 
 Interactive docs at `/docs` once the API is running.
 
@@ -114,7 +118,7 @@ part of the next verification). For image and scanned-PDF OCR outside Docker, in
 cp .env.example .env   # fill in DATABASE_URL etc.
 pip install -r requirements.txt
 
-python -m alembic upgrade head   # create schema
+python -m alembic upgrade head   # create schema (re-run after pulling: new migrations apply)
 python -m app.db.seed             # load the 6 fixture files
 
 uvicorn app.main:app --reload     # API on :8000
@@ -138,6 +142,16 @@ curl -X POST localhost:8000/bids/BID-B009-T2026-0006/documents \
   -F document_type=GST_CERTIFICATE -F file=@samples/B009_gst_certificate_mismatch.pdf
 curl -X POST localhost:8000/bids/BID-B009-T2026-0006/verify
 ```
+
+Check the system end to end (API and worker must be running):
+
+```bash
+python scripts/check_ground_truth.py   # re-verifies all 12 seed bids; expect "12/12 ... match"
+python scripts/verify_audit_chain.py   # expect "OK: every chain verifies"
+```
+
+`check_ground_truth.py` adds one normal "verification completed" entry to each bid's audit log
+per run. Use `--no-run` to check the latest stored scores without re-verifying.
 
 ## Seed data
 
