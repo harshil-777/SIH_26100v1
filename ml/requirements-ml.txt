@@ -1,0 +1,16 @@
+# Model training (ml/). Install on top of PyTorch:
+#   Colab / Kaggle: torch is preinstalled with CUDA -- do NOT reinstall it.
+#   Local CPU:      pip install torch --index-url https://download.pytorch.org/whl/cpu
+# then: pip install -r ml/requirements-ml.txt
+transformers==5.17.0   # 5.x: TrainingArguments(warmup_steps=<float ratio>) replaces warmup_ratio
+accelerate==1.15.0
+safetensors
+lightgbm==4.7.0
+huggingface_hub==1.33.0
+numpy
+
+# The risk and recommendation data generators score bids with the app's real rule engine,
+# which needs these to import (no database connection is made).
+sqlalchemy>=2.0.30,<2.1
+pydantic>=2.7,<3
+pydantic-settings>=2.3,<3

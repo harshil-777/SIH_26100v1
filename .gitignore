@@ -22,3 +22,7 @@ samples/
 
 # Local-only, not for GitHub
 FRIEND_PC_SETUP.md
+
+# Generated training data and trained models (publish to Hugging Face instead)
+ml/data/
+ml/models/
