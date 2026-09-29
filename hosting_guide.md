@@ -27,6 +27,42 @@ not free to use unless you have HF PRO. If you do have PRO, they're still the si
   downloads them at startup regardless of where it's hosted.
 - Database: Supabase, already set up and seeded. You'll just need the `DATABASE_URL`.
 
+## Model weights, without depending on Hugging Face at all
+
+`trained_models.zip` (~510 MB) is a plain copy of the same three trained models, zipped up. It's
+**not in git** — GitHub rejects files over 100 MB and this is way past that — so it has to reach
+you some other way (Drive link, USB, etc. — whoever has it will send it directly). Extract it and
+you'll have:
+
+```
+models/
+  extraction/      (DistilBERT token classifier)
+  risk/             (LightGBM)
+  recommendation/  (flan-t5-small)
+```
+
+You don't need this — leaving `ML_EXTRACTION_MODEL` / `ML_RISK_MODEL` / `ML_RECOMMENDATION_MODEL`
+unset downloads the same weights from Hugging Face automatically the first time the backend
+starts. The zip is only useful if you'd rather skip that ~500 MB download (slow connection, or
+running fully offline/local), or don't want the deploy to depend on Hugging Face being reachable.
+
+To use it instead, point the three env vars at the extracted **absolute local paths** rather than
+the HF repo ids, e.g. in `.env`:
+
+```bash
+ML_MODELS_ENABLED=true
+ML_EXTRACTION_MODEL=/absolute/path/to/models/extraction
+ML_RISK_MODEL=/absolute/path/to/models/risk
+ML_RECOMMENDATION_MODEL=/absolute/path/to/models/recommendation
+```
+
+All three loaders (`app/services/ml_models.py`) accept either a HF repo id or a local directory —
+whichever you give them. This works for running locally; it's **not** wired into the Cloud Run
+Dockerfile (that always pulls from Hugging Face on startup), so if you want Cloud Run to use the
+zip instead, you'd need to `COPY` the extracted `models/` folder into
+`deploy/cloudrun/Dockerfile` and set the env vars to its in-container path — not done here since
+the HF download path already works and is simpler to keep working.
+
 ## The plan
 
 | Piece | Platform | Cost |

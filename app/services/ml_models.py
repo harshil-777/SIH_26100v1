@@ -33,11 +33,20 @@ def _extractor():
 
 @lru_cache
 def _risk_model():
-    from huggingface_hub import snapshot_download
+    from pathlib import Path
 
     from ml.risk.infer import RiskModel
 
-    local_dir = snapshot_download(get_settings().ml_risk_model)
+    repo_or_path = get_settings().ml_risk_model
+    if Path(repo_or_path).exists():
+        # A local directory (e.g. extracted from trained_models.zip) rather than a HF repo id --
+        # unlike AutoModel.from_pretrained (used by the other two models), snapshot_download only
+        # understands repo ids, so it can't be handed a local path directly.
+        local_dir = repo_or_path
+    else:
+        from huggingface_hub import snapshot_download
+
+        local_dir = snapshot_download(repo_or_path)
     return RiskModel(local_dir)
 
 
