@@ -35,6 +35,12 @@ No Celery/Redis in this path — `/verify` runs the pipeline inline within the r
 throttles CPU between requests by default and a background worker would starve waiting on a
 queue that never gets CPU to check itself.
 
+If `trained_models.zip` (see `hosting_guide.md`) is present at the repo root when you run
+`deploy_cloudrun.sh`, it bakes the model weights straight into the image so the service never
+needs Hugging Face reachable at startup. If it's not there, the service downloads the weights
+from Hugging Face on first startup instead — both paths work, the script just picks whichever
+one it can.
+
 ## Option B: Hugging Face Space (needs PRO, $9/mo)
 
 **Create the Space:**

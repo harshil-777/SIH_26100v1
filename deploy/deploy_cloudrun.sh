@@ -45,7 +45,34 @@ cp "$REPO_ROOT/alembic.ini" "$SCRATCH/alembic.ini"
 cp "$REPO_ROOT/requirements.txt" "$SCRATCH/requirements.txt"
 cp -r "$REPO_ROOT/WORKING DOCUMENTS" "$SCRATCH/WORKING DOCUMENTS"
 cp "$REPO_ROOT/deploy/cloudrun/Dockerfile" "$SCRATCH/Dockerfile"
-find "$SCRATCH/app" -name "__pycache__" -type d -prune -exec rm -rf {} + 2>/dev/null || true
+
+# ml/ inference code (not ml/data or ml/models -- synthetic training data and local training
+# output, both huge and gitignored, never needed at inference time).
+mkdir -p "$SCRATCH/ml"
+cp -r "$REPO_ROOT/ml/extraction" "$REPO_ROOT/ml/risk" "$REPO_ROOT/ml/recommendation" "$REPO_ROOT/ml/common" "$SCRATCH/ml/"
+[ -f "$REPO_ROOT/ml/__init__.py" ] && cp "$REPO_ROOT/ml/__init__.py" "$SCRATCH/ml/__init__.py"
+find "$SCRATCH/app" "$SCRATCH/ml" -name "__pycache__" -type d -prune -exec rm -rf {} + 2>/dev/null || true
+
+# Model weights: bake trained_models.zip straight into the image if this machine has it, so the
+# service never needs Hugging Face reachable at startup. Falls back to the HF download path
+# (unchanged from before) if the zip isn't here -- e.g. a machine that only cloned the git repo.
+mkdir -p "$SCRATCH/ml_weights"
+BAKED_WEIGHTS=false
+if [ -f "$REPO_ROOT/trained_models.zip" ]; then
+  echo "Found trained_models.zip -- baking model weights into the image (no Hugging Face download at startup) ..."
+  UNZIP_TMP="$(mktemp -d)"
+  unzip -q "$REPO_ROOT/trained_models.zip" -d "$UNZIP_TMP"
+  cp -r "$UNZIP_TMP/models/"* "$SCRATCH/ml_weights/"
+  rm -rf "$UNZIP_TMP"
+  BAKED_WEIGHTS=true
+else
+  echo "trained_models.zip not found at repo root -- models will be downloaded from Hugging Face on first startup instead."
+fi
+
+ENV_VARS="DATABASE_URL=$DATABASE_URL"
+if [ "$BAKED_WEIGHTS" = true ]; then
+  ENV_VARS="$ENV_VARS,ML_EXTRACTION_MODEL=/app/ml_weights/extraction,ML_RISK_MODEL=/app/ml_weights/risk,ML_RECOMMENDATION_MODEL=/app/ml_weights/recommendation"
+fi
 
 echo "Deploying $SERVICE_NAME to Cloud Run ($REGION) ..."
 gcloud run deploy "$SERVICE_NAME" \
@@ -55,7 +82,7 @@ gcloud run deploy "$SERVICE_NAME" \
   --memory 2Gi \
   --cpu 2 \
   --timeout 300 \
-  --set-env-vars "DATABASE_URL=$DATABASE_URL"
+  --set-env-vars "$ENV_VARS"
 
 URL="$(gcloud run services describe "$SERVICE_NAME" --region "$REGION" --format 'value(status.url)')"
 echo

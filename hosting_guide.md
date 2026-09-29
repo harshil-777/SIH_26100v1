@@ -31,37 +31,24 @@ not free to use unless you have HF PRO. If you do have PRO, they're still the si
 
 `trained_models.zip` (~510 MB) is a plain copy of the same three trained models, zipped up. It's
 **not in git** — GitHub rejects files over 100 MB and this is way past that — so it has to reach
-you some other way (Drive link, USB, etc. — whoever has it will send it directly). Extract it and
-you'll have:
+you some other way (Drive link, USB, etc. — whoever has it will send it directly).
 
-```
-models/
-  extraction/      (DistilBERT token classifier)
-  risk/             (LightGBM)
-  recommendation/  (flan-t5-small)
-```
+You don't strictly need it. If it's missing, `deploy_cloudrun.sh` just deploys the way it did
+before: the service downloads the same weights from Hugging Face the first time it starts. But if
+you *have* the zip, put it at the **repo root** (next to `hosting_guide.md`, named exactly
+`trained_models.zip`) before running the deploy script — it will notice it automatically and bake
+the weights straight into the Cloud Run image at deploy time. No separate file host, no extra
+account, no code changes: the model files just travel inside the same container build that
+already ships `app/`.
 
-You don't need this — leaving `ML_EXTRACTION_MODEL` / `ML_RISK_MODEL` / `ML_RECOMMENDATION_MODEL`
-unset downloads the same weights from Hugging Face automatically the first time the backend
-starts. The zip is only useful if you'd rather skip that ~500 MB download (slow connection, or
-running fully offline/local), or don't want the deploy to depend on Hugging Face being reachable.
+What this buys you: the deployed service never has to reach Hugging Face at all, at startup or
+otherwise — one less external dependency and no first-request download delay. The image is
+correspondingly ~500 MB bigger and takes a bit longer to push to Cloud Build the first time.
 
-To use it instead, point the three env vars at the extracted **absolute local paths** rather than
-the HF repo ids, e.g. in `.env`:
-
-```bash
-ML_MODELS_ENABLED=true
-ML_EXTRACTION_MODEL=/absolute/path/to/models/extraction
-ML_RISK_MODEL=/absolute/path/to/models/risk
-ML_RECOMMENDATION_MODEL=/absolute/path/to/models/recommendation
-```
-
-All three loaders (`app/services/ml_models.py`) accept either a HF repo id or a local directory —
-whichever you give them. This works for running locally; it's **not** wired into the Cloud Run
-Dockerfile (that always pulls from Hugging Face on startup), so if you want Cloud Run to use the
-zip instead, you'd need to `COPY` the extracted `models/` folder into
-`deploy/cloudrun/Dockerfile` and set the env vars to its in-container path — not done here since
-the HF download path already works and is simpler to keep working.
+(For local/dev runs instead of Cloud Run, the same zip works too — extract it and point
+`ML_EXTRACTION_MODEL` / `ML_RISK_MODEL` / `ML_RECOMMENDATION_MODEL` in your `.env` at the
+extracted folders' absolute paths instead of the HF repo ids. Not required for the Cloud Run path
+above, which handles this on its own.)
 
 ## The plan
 
@@ -101,7 +88,18 @@ from there — never pass it as a command-line argument, it'd land in shell hist
 
 This doesn't need Docker installed locally — `gcloud run deploy --source` uploads the source
 and builds the container server-side via Cloud Build. Takes a few minutes the first time
-(installing torch + transformers). When it finishes, it prints the service URL:
+(installing torch + transformers, plus longer still if it's also baking in `trained_models.zip`
+— see above). It prints one of these two lines early on, so you know which path it took:
+
+```
+Found trained_models.zip -- baking model weights into the image (no Hugging Face download at startup) ...
+```
+or
+```
+trained_models.zip not found at repo root -- models will be downloaded from Hugging Face on first startup instead.
+```
+
+When it finishes, it prints the service URL:
 
 ```
 https://gem-compliance-api-<random>.<region>.run.app
@@ -138,8 +136,9 @@ zero), but should complete and show a result without needing to poll or refresh.
 ## Things that are normal, not bugs
 
 - **Cold start**: Cloud Run scales to zero when idle. The first request after a quiet period
-  takes longer (loading the models fresh). Subsequent requests are fast until it scales down
-  again.
+  takes longer (loading the models fresh — from the image directly if you baked in
+  `trained_models.zip`, otherwise from Hugging Face). Subsequent requests are fast until it
+  scales down again.
 - **`/verify` takes longer than it used to**: expected, see above — it's now doing the whole
   pipeline inline instead of returning immediately with a job id.
 - **Supabase pause**: free tier pauses after 7 days of zero activity. One request from the
