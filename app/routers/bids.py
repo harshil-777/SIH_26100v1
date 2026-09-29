@@ -41,6 +41,7 @@ from app.schemas.bids import (
     VerifyJobOut,
 )
 from app.services.audit import get_audit_log, verify_chain, write_audit_log
+from app.services.orchestrator import run_pipeline_standalone
 from app.services.object_store import get_object_store
 from app.services.ocr import FILE_EXTENSIONS, detect_file_kind
 from app.services.recommendation import recommend
@@ -287,6 +288,14 @@ async def submit_declaration(
 @router.post("/{bid_id}/verify", response_model=VerifyJobOut)
 async def verify_bid(bid_id: str, session: AsyncSession = Depends(get_session)) -> VerifyJobOut:
     await _get_bid_or_404(session, bid_id)
+
+    if get_settings().sync_pipeline:
+        try:
+            result = await run_pipeline_standalone(bid_id)
+        except Exception as exc:
+            return VerifyJobOut(bid_id=bid_id, job_id=bid_id, status="failed", error=str(exc))
+        return VerifyJobOut(bid_id=bid_id, job_id=bid_id, status="success", result=result)
+
     # task_id == bid_id: lets GET /status look up state without a separate jobs table.
     # Re-verifying a bid whose previous run already finished simply replaces that result.
     if not enqueue(verify_bid_task, args=[bid_id], task_id=bid_id):

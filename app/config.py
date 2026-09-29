@@ -31,6 +31,13 @@ class Settings(BaseSettings):
     # here, so this only needs the deployed frontend's origin, e.g. https://your-app.vercel.app
     cors_origins: str = ""
 
+    # Serverless platforms (Cloud Run and similar) throttle CPU to near-zero between requests
+    # unless you pay for "always allocated" CPU, which would starve a background Celery worker
+    # idling on Redis. When true, /verify runs the pipeline inline within the request instead
+    # of enqueueing it -- slower to respond, but correct on that kind of platform. Local dev
+    # and docker-compose (a real always-on worker) should leave this off.
+    sync_pipeline: bool = False
+
 
 @lru_cache
 def get_settings() -> Settings:

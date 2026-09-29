@@ -57,7 +57,16 @@ export default function BidDetail({ bidId }: { bidId: string }) {
     setVerifying(true);
     setVerifyError(null);
     try {
-      await api.verify(bidId);
+      const started = await api.verify(bidId);
+      // sync_pipeline deployments (e.g. Cloud Run, where a background worker can't rely on
+      // getting CPU between requests) run the pipeline inline and answer with the final
+      // status already -- nothing to poll for. Celery deployments answer "queued" and the
+      // loop below waits on GET /status as before.
+      if (started.status === "failed") throw new Error(started.error ?? "Verification failed");
+      if (started.status === "success") {
+        await load();
+        return;
+      }
       let failedPolls = 0;
       for (let attempt = 0; attempt < POLL_LIMIT && !cancelled.current; attempt++) {
         await new Promise((resolve) => setTimeout(resolve, POLL_MS));

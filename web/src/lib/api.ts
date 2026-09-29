@@ -247,7 +247,11 @@ export const api = {
     }
   },
 
-  verify: (bidId: string) => request<{ job_id: string }>(`/bids/${encodeURIComponent(bidId)}/verify`, { method: "POST" }),
+  verify: (bidId: string) =>
+    request<{ job_id: string; status: "queued" | "success" | "failed"; error: string | null }>(
+      `/bids/${encodeURIComponent(bidId)}/verify`,
+      { method: "POST" },
+    ),
 
   decide: (bidId: string, body: { decision: Decision; actor: string; reason: string | null }) =>
     request<{ bid_id: string; status: BidStatus; audit_log_id: number }>(

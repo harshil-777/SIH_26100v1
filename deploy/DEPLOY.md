@@ -1,75 +1,89 @@
 # Deploying for free
 
-Two pieces, two free platforms:
+> **Correction**: this originally recommended a Hugging Face Space (Docker SDK) for the
+> backend. That was wrong — creating a Docker or Gradio Space requires HF PRO ($9/mo); only
+> Static Spaces and the CPU-Basic *hardware itself* (once you have access) are free. See
+> `hosting_guide.md` for the full correction and current recommendation (Google Cloud Run).
+> The `deploy/space/` files below still work correctly if you do have PRO.
 
-| Piece | Platform | Why |
-|---|---|---|
-| Frontend (`web/`) | Vercel | Built for static/Vite sites; zero cost |
-| API + Celery worker + Redis + ML models | Hugging Face Spaces (Docker) | Free CPU tier, 16GB RAM — enough for the models; your models already live there |
+## The two backend options
 
-Database stays on Supabase (already set up, already free).
+| | Free without a card | Needs a card on file | Notes |
+|---|---|---|---|
+| **Google Cloud Run** (recommended) | No | Yes (won't charge at low traffic) | `deploy/deploy_cloudrun.sh` — no Docker needed locally, builds server-side |
+| **Hugging Face Space (Docker)** | No — needs HF PRO | No | `deploy/push_to_space.sh` — simpler (Celery+Redis bundled in one container), but gated behind a subscription |
 
-## 1. Backend — Hugging Face Space
+Frontend is Vercel either way (free, no card). Database is Supabase either way (free, already
+set up).
+
+---
+
+## Option A: Google Cloud Run (no HF PRO needed)
+
+Full walkthrough: **`hosting_guide.md`** at the repo root. Short version:
+
+```bash
+gcloud auth login
+gcloud config set project YOUR_PROJECT_ID
+gcloud services enable run.googleapis.com cloudbuild.googleapis.com   # once
+
+./deploy/deploy_cloudrun.sh
+```
+
+No Celery/Redis in this path — `/verify` runs the pipeline inline within the request
+(`SYNC_PIPELINE=true`, set automatically by `deploy/cloudrun/Dockerfile`), because Cloud Run
+throttles CPU between requests by default and a background worker would starve waiting on a
+queue that never gets CPU to check itself.
+
+## Option B: Hugging Face Space (needs PRO, $9/mo)
 
 **Create the Space:**
 1. https://huggingface.co/new-space
-2. Pick a name (e.g. `gem-compliance-api`), SDK: **Docker**, hardware: free CPU basic.
-3. Once created, go to **Settings → Variables and secrets** and add a secret:
-   - `DATABASE_URL` = your Supabase connection string (same value as in your local `.env`)
+2. SDK: **Docker**, hardware: CPU basic. (Requires PRO on your account to create.)
+3. **Settings → Variables and secrets** → add secret `DATABASE_URL` = your Supabase connection string.
 
-**Push the code** (from this repo, on your machine):
+**Push the code:**
 ```bash
 ./deploy/push_to_space.sh https://huggingface.co/spaces/YOUR_USERNAME/gem-compliance-api
 ```
-It'll ask for git credentials on push — username can be anything, password is a Hugging Face
-**write** token (Settings → Access Tokens on huggingface.co).
+Prompts for git credentials on push — username can be anything, password is an HF **write**
+token (Settings → Access Tokens). Pushes only the runtime files (`app/`, `alembic.ini`,
+`requirements.txt`, seed data, the Dockerfile) into the Space's own separate git repo as a
+fresh single commit each time — not your GitHub history.
 
-This only pushes what the container needs (`app/`, `alembic.ini`, `requirements.txt`, seed
-data, the Dockerfile) into the Space's own separate git repo — not your whole GitHub repo, and
-not your GitHub history. Every run force-pushes a fresh single commit; that's intentional, the
-Space is a deploy target, not somewhere to keep history.
+Unlike Cloud Run, this bundles Redis + a real Celery worker in the same always-on container
+(HF Spaces doesn't throttle CPU the way Cloud Run does), so `/verify` keeps its original
+queue-and-poll behaviour with no code differences from local dev.
 
-**Watch it build:** the Space's own page shows build logs. First build takes a while (installing
-torch + transformers). Once it says "Running", your API is live at:
-```
-https://YOUR_USERNAME-gem-compliance-api.hf.space
-```
-Check `https://.../health` returns `{"status":"ok"}`.
+Live at `https://YOUR_USERNAME-<space-name>.hf.space` once the build finishes.
 
-## 2. Frontend — Vercel
+---
 
-1. https://vercel.com/new → import your GitHub repo.
-2. **Root Directory**: set to `web` (this is the one setting that matters — the repo has other
-   top-level folders Vercel would otherwise get confused by).
-3. **Environment Variables**: add
-   - `VITE_API_BASE_URL` = `https://YOUR_USERNAME-gem-compliance-api.hf.space` (your Space's URL from step 1, no trailing slash)
+## Frontend — Vercel (either option)
+
+1. https://vercel.com/new → import the GitHub repo.
+2. **Root Directory**: `web`.
+3. **Environment Variables**: `VITE_API_BASE_URL` = your backend's URL from whichever option you picked (no trailing slash).
 4. Deploy.
 
-Vercel auto-detects Vite from `web/vercel.json` (already in the repo). No server-side routing
-config needed — the app uses hash-based URLs (`#/tenders/...`), which never touch the server, so
-there's no SPA-rewrite/404-on-refresh problem to solve.
+`web/vercel.json` already configures the build. No SPA-rewrite config needed — the app uses
+hash-based routing (`#/tenders/...`), which never touches the server.
 
-## 3. Verify
+## Verify
 
-Open your Vercel URL. It should show the tender list, pulling live from your Space's API, which
-pulls from Supabase and loads your three models from Hugging Face on first request (a few
-seconds of cold-start the very first time; cached after that for as long as the Space stays warm).
+Open the Vercel URL: tender list, live from Supabase via your backend. Click through to a
+bidder to see the full detail page and try "Run verification".
 
-## What's free and what to watch
+## Known caveats (both options)
 
-- **Vercel free tier**: unlimited for personal projects, generous bandwidth.
-- **HF Spaces free CPU tier**: the Space sleeps after a period of inactivity and cold-starts on
-  the next request (expect ~30-60s the first time it wakes, since it re-downloads/re-loads the
-  models). That's normal, not a bug.
-- **Supabase free tier**: has its own inactivity pause after 7 days with zero activity — if that
-  happens, one request from the dashboard/Supabase UI wakes it back up.
-- **Storage caveat**: uploaded documents live on the Space's local disk, which is wiped on every
-  restart/redeploy (see `deploy/space/README.md`). Fine for a demo; not for anything you need to
-  keep. Fixing this for real means swapping `LocalObjectStore` for an S3-compatible one in
-  `app/services/object_store.py` — not done here since it's out of scope for "free."
+- **Uploaded documents don't persist** across restarts/redeploys — both platforms give the
+  container ephemeral local disk. Fine for a demo; fixing it means swapping
+  `app/services/object_store.py`'s `LocalObjectStore` for an S3-compatible store.
+- **Cold starts**: both platforms scale to zero when idle and take longer on the first request
+  after a quiet period (reloading the models).
 
-## Redeploying after a code change
+## Redeploying later
 
-Backend: `./deploy/push_to_space.sh <space-url>` again.
-Frontend: push to GitHub — Vercel redeploys automatically on every push (if you connected the
-repo via the Vercel dashboard as in step 2).
+- Cloud Run: `./deploy/deploy_cloudrun.sh` again.
+- HF Space: `./deploy/push_to_space.sh <space-url>` again.
+- Frontend: push to GitHub — Vercel redeploys automatically if connected via the dashboard.

@@ -70,7 +70,11 @@ class DeclarationOut(BaseModel):
 class VerifyJobOut(BaseModel):
     bid_id: str
     job_id: str
-    status: Literal["queued"]
+    # "queued": enqueued for the Celery worker (GET .../status polls it). "success"/"failed":
+    # sync_pipeline=true ran it inline already; result/error is the final outcome, no polling.
+    status: Literal["queued", "success", "failed"]
+    result: dict[str, Any] | None = None
+    error: str | None = None
 
 
 class StatusOut(BaseModel):
