@@ -1,13 +1,54 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.fixtures import build_eligibility_rules_typed
 from app.db.session import get_session
-from app.models import Tender, TenderDocumentRequirement
-from app.schemas.tenders import DocumentRequirementOut, TenderCreate, TenderOut
+from app.models import Bid, ComplianceScore, Tender, TenderDocumentRequirement
+from app.schemas.tenders import DocumentRequirementOut, TenderCreate, TenderListItem, TenderOut
 
 router = APIRouter(prefix="/tenders", tags=["tenders"])
+
+_RISK_RANK = {"Low": 1, "Medium": 2, "High": 3, "Non-Compliant": 4}
+_RANK_TO_RISK = {v: k for k, v in _RISK_RANK.items()}
+
+
+@router.get("", response_model=list[TenderListItem])
+async def list_tenders(session: AsyncSession = Depends(get_session)) -> list[TenderListItem]:
+    """Landing-page list: one row per tender, with how many bidders are participating."""
+    latest_score = (
+        select(ComplianceScore)
+        .distinct(ComplianceScore.bid_id)
+        .order_by(ComplianceScore.bid_id, ComplianceScore.generated_at.desc())
+        .subquery()
+    )
+    risk_rank = case(*[(latest_score.c.risk_level == risk, rank) for risk, rank in _RISK_RANK.items()], else_=None)
+
+    stmt = (
+        select(
+            Tender.tender_id,
+            Tender.title,
+            Tender.department,
+            Tender.category,
+            Tender.estimated_value_inr,
+            Tender.msme_reserved,
+            Tender.submission_deadline,
+            func.count(Bid.bid_id).label("participant_count"),
+            func.count(Bid.bid_id).filter(Bid.status.in_(["submitted", "under_review"])).label(
+                "awaiting_decision_count"
+            ),
+            func.max(risk_rank).label("worst_risk_rank"),
+        )
+        .outerjoin(Bid, Bid.tender_id == Tender.tender_id)
+        .outerjoin(latest_score, latest_score.c.bid_id == Bid.bid_id)
+        .group_by(Tender.tender_id)
+        .order_by(Tender.tender_id)
+    )
+    rows = (await session.execute(stmt)).mappings().all()
+    return [
+        TenderListItem(**{**row, "worst_risk_level": _RANK_TO_RISK.get(row["worst_risk_rank"])})
+        for row in rows
+    ]
 
 
 @router.post("", response_model=TenderOut, status_code=201)

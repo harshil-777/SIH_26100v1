@@ -18,6 +18,7 @@ class MissingRequirement:
 class CompletenessResult:
     passed: bool
     missing: list[MissingRequirement]
+    total_mandatory: int = 0
 
 
 async def check_completeness(
@@ -55,4 +56,4 @@ async def check_completeness(
         if req.document_type not in submitted_types
     ]
 
-    return CompletenessResult(passed=not missing, missing=missing)
+    return CompletenessResult(passed=not missing, missing=missing, total_mandatory=len(mandatory_reqs))

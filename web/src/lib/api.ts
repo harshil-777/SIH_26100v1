@@ -7,6 +7,33 @@ export type Decision = "qualify" | "disqualify" | "request_clarification";
 // The API serialises Postgres NUMERIC as a string ("76.19"); callers parse with toNumber().
 type Numeric = string | number;
 
+export type TenderListItem = {
+  tender_id: string;
+  title: string;
+  department: string;
+  category: string;
+  estimated_value_inr: Numeric;
+  msme_reserved: boolean;
+  submission_deadline: string;
+  participant_count: number;
+  awaiting_decision_count: number;
+  worst_risk_level: RiskLevel | null;
+};
+
+export type TenderOut = {
+  tender_id: string;
+  title: string;
+  department: string;
+  category: string;
+  estimated_value_inr: Numeric;
+  msme_reserved: boolean;
+  mii_local_content_threshold_pct: Numeric | null;
+  requires_oem_authorization: boolean;
+  epfo_applicable_employee_threshold: number | null;
+  submission_deadline: string;
+  created_at: string;
+};
+
 export type DashboardBid = {
   bid_id: string;
   tender_id: string;
@@ -200,7 +227,10 @@ const json = (body: unknown): RequestInit => ({
 });
 
 export const api = {
-  listBids: () => request<DashboardBid[]>("/dashboard/bids"),
+  listTenders: () => request<TenderListItem[]>("/tenders"),
+  getTender: (tenderId: string) => request<TenderOut>(`/tenders/${encodeURIComponent(tenderId)}`),
+  listBids: (tenderId?: string) =>
+    request<DashboardBid[]>(`/dashboard/bids${tenderId ? `?tender_id=${encodeURIComponent(tenderId)}` : ""}`),
   getBid: (bidId: string) => request<BidDetail>(`/bids/${encodeURIComponent(bidId)}`),
   getDocuments: (bidId: string) => request<BidDocument[]>(`/bids/${encodeURIComponent(bidId)}/documents`),
   getAuditLog: (bidId: string) => request<AuditLog>(`/bids/${encodeURIComponent(bidId)}/audit-log`),

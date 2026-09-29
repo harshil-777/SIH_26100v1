@@ -4,6 +4,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.config import get_settings
 from app.routers import audit, bids, dashboard, tenders
 
 logger = logging.getLogger(__name__)
@@ -23,9 +24,11 @@ async def json_500_on_unhandled_error(request: Request, call_next):
         return JSONResponse(status_code=500, content={"detail": "Internal server error. Please try again."})
 
 
+_extra_origins = [o.strip() for o in get_settings().cors_origins.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=["http://localhost:5173", *_extra_origins],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -43,7 +43,7 @@ from app.schemas.bids import (
 from app.services.audit import get_audit_log, verify_chain, write_audit_log
 from app.services.object_store import get_object_store
 from app.services.ocr import FILE_EXTENSIONS, detect_file_kind
-from app.services.recommendation import generate_recommendation
+from app.services.recommendation import recommend
 from app.tasks import enqueue, ocr_document_task, verify_bid_task
 
 router = APIRouter(prefix="/bids", tags=["bids"])
@@ -338,7 +338,7 @@ async def get_compliance_score(
     if score is None:
         raise HTTPException(404, f"No compliance score yet for bid {bid_id!r}")
 
-    recommendation = generate_recommendation(
+    recommendation_result = recommend(
         score.overall_score, score.risk_level, score.criterion_breakdown_json
     )
     return ComplianceScoreOut(
@@ -347,7 +347,8 @@ async def get_compliance_score(
         risk_level=score.risk_level,
         criterion_breakdown_json=score.criterion_breakdown_json,
         generated_at=score.generated_at,
-        recommendation=recommendation,
+        recommendation=recommendation_result["text"],
+        recommendation_source=recommendation_result["source"],
     )
 
 

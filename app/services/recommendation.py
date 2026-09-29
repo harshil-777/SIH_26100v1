@@ -10,6 +10,8 @@ data every time it's requested, so there is nothing to keep in sync with a real 
 """
 from decimal import Decimal
 
+from app.services import ml_models
+
 ADVISORY_PREFIX = "AI-generated, advisory only: "
 
 _CRITERION_LABELS = {
@@ -50,3 +52,14 @@ def generate_recommendation(overall_score: Decimal | float, risk_level: str, bre
         f"{ADVISORY_PREFIX}Score {overall_score}/100 ({risk_level} risk).{weak_note} "
         "Recommend officer review before qualifying."
     )
+
+
+def recommend(overall_score: Decimal | float, risk_level: str, breakdown: dict) -> dict:
+    """{"text", "source"}. Tries the trained model (which has its own guardrail against a wrong
+    verdict or an invented/missing finding -- see ml/recommendation/infer.py); falls back to
+    this module's deterministic template when ML is disabled, unavailable, or its own guardrail
+    rejects the generated text."""
+    ml_result = ml_models.recommend(overall_score, risk_level, breakdown)
+    if ml_result is not None:
+        return {"text": ml_result["text"], "source": ml_result["source"]}
+    return {"text": generate_recommendation(overall_score, risk_level, breakdown), "source": "template"}

@@ -88,6 +88,7 @@ class ComplianceScoreOut(BaseModel):
     criterion_breakdown_json: dict[str, Any]
     generated_at: datetime
     recommendation: str
+    recommendation_source: Literal["model", "template_fallback", "template"]
 
 
 class DecisionIn(BaseModel):

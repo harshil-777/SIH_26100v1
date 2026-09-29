@@ -1,11 +1,16 @@
 import { useEffect, useState } from "react";
 
-// Two views don't justify a router dependency: "#/" is the bid list, "#/bids/<id>" a bid.
-export type Route = { name: "list" } | { name: "bid"; bidId: string };
+export type Route =
+  | { name: "tenders" }
+  | { name: "tender"; tenderId: string }
+  | { name: "bid"; bidId: string };
 
 function parse(hash: string): Route {
-  const match = hash.match(/^#\/bids\/(.+)$/);
-  return match ? { name: "bid", bidId: decodeURIComponent(match[1]) } : { name: "list" };
+  const bid = hash.match(/^#\/bids\/(.+)$/);
+  if (bid) return { name: "bid", bidId: decodeURIComponent(bid[1]) };
+  const tender = hash.match(/^#\/tenders\/(.+)$/);
+  if (tender) return { name: "tender", tenderId: decodeURIComponent(tender[1]) };
+  return { name: "tenders" };
 }
 
 export function useRoute(): Route {
@@ -22,3 +27,4 @@ export function useRoute(): Route {
 }
 
 export const bidHref = (bidId: string) => `#/bids/${encodeURIComponent(bidId)}`;
+export const tenderHref = (tenderId: string) => `#/tenders/${encodeURIComponent(tenderId)}`;

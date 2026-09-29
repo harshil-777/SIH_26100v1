@@ -1,6 +1,7 @@
 import { ShieldCheck } from "lucide-react";
 import BidDetail from "@/pages/BidDetail";
-import BidList from "@/pages/BidList";
+import TenderDetail from "@/pages/TenderDetail";
+import TenderList from "@/pages/TenderList";
 import { useRoute } from "@/lib/router";
 
 export default function App() {
@@ -18,7 +19,13 @@ export default function App() {
         </div>
       </header>
       <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
-        {route.name === "bid" ? <BidDetail key={route.bidId} bidId={route.bidId} /> : <BidList />}
+        {route.name === "bid" ? (
+          <BidDetail key={route.bidId} bidId={route.bidId} />
+        ) : route.name === "tender" ? (
+          <TenderDetail key={route.tenderId} tenderId={route.tenderId} />
+        ) : (
+          <TenderList />
+        )}
       </main>
     </div>
   );

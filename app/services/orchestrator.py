@@ -14,10 +14,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import SessionLocal
 from app.models import Bid, Tender
-from app.services import ocr
+from app.services import ml_models, ocr
 from app.services.completeness import check_completeness
 from app.services.audit import write_audit_log
-from app.services.recommendation import generate_recommendation
+from app.services.recommendation import recommend
 from app.services.rule_engine import evaluate_criteria, gather_facts
 from app.services.scoring import build_compliance_score
 from app.services.verification import run_verification_stage
@@ -67,13 +67,20 @@ async def run_pipeline(session: AsyncSession, bid: Bid, tender: Tender) -> dict:
 
     # Stage 6: scoring
     score_row = build_compliance_score(bid.bid_id, outcomes)
+    # Advisory only, attached to the persisted breakdown but never read by scoring.py --
+    # it cannot change overall_score or risk_level. None (the ordinary case when
+    # ML_MODELS_ENABLED is unset) simply omits the key.
+    ml_risk = ml_models.risk_estimate(tender, facts)
+    if ml_risk is not None:
+        score_row.criterion_breakdown_json["ml_risk_estimate"] = ml_risk
     session.add(score_row)
     await session.flush()
 
     # Stage 7: recommendation (display-only, never persisted)
-    recommendation = generate_recommendation(
+    recommendation_result = recommend(
         score_row.overall_score, score_row.risk_level, score_row.criterion_breakdown_json
     )
+    recommendation = recommendation_result["text"]
 
     # Stage 8: audit write
     audit_payload = {
@@ -82,6 +89,7 @@ async def run_pipeline(session: AsyncSession, bid: Bid, tender: Tender) -> dict:
         "mandatory_failure_reasons": score_row.criterion_breakdown_json.get(
             "mandatory_failure_reasons", []
         ),
+        "recommendation_source": recommendation_result["source"],
     }
     await write_audit_log(
         session, bid_id=bid.bid_id, actor="system:orchestrator", action="verify_completed", payload=audit_payload
@@ -95,6 +103,8 @@ async def run_pipeline(session: AsyncSession, bid: Bid, tender: Tender) -> dict:
         "risk_level": score_row.risk_level,
         "mandatory_failure_reasons": audit_payload["mandatory_failure_reasons"],
         "recommendation": recommendation,
+        "recommendation_source": recommendation_result["source"],
+        "ml_risk_estimate": ml_risk,
     }
 
 

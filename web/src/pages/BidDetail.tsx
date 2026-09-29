@@ -1,6 +1,7 @@
 import { ArrowLeft, Loader2, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { RiskBadge } from "@/components/badges";
+import { tenderHref } from "@/lib/router";
 import { AuditChain } from "@/components/detail/AuditChain";
 import { BidderProfile } from "@/components/detail/BidderProfile";
 import { CriteriaTable } from "@/components/detail/CriteriaTable";
@@ -84,7 +85,7 @@ export default function BidDetail({ bidId }: { bidId: string }) {
   if (error) {
     return (
       <div className="space-y-4">
-        <BackLink />
+        <BackLink tenderId={null} />
         <Card className="border-red-200 bg-red-50">
           <CardBody className="text-sm text-red-800">
             {error.status === 404 ? `Bid ${bidId} was not found.` : `Failed to load this bid: ${error.message}`}
@@ -97,7 +98,7 @@ export default function BidDetail({ bidId }: { bidId: string }) {
   if (!data) {
     return (
       <div className="space-y-4">
-        <BackLink />
+        <BackLink tenderId={null} />
         <div className="flex items-center gap-2 text-sm text-slate-500">
           <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> Loading bid…
         </div>
@@ -114,7 +115,7 @@ export default function BidDetail({ bidId }: { bidId: string }) {
 
   return (
     <div className="space-y-5">
-      <BackLink />
+      <BackLink tenderId={bid.tender.tender_id} />
 
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
@@ -164,10 +165,13 @@ export default function BidDetail({ bidId }: { bidId: string }) {
   );
 }
 
-function BackLink() {
+function BackLink({ tenderId }: { tenderId: string | null }) {
   return (
-    <a href="#/" className="inline-flex items-center gap-1 text-sm text-slate-600 hover:text-slate-900">
-      <ArrowLeft className="h-4 w-4" aria-hidden /> All bids
+    <a
+      href={tenderId ? tenderHref(tenderId) : "#/"}
+      className="inline-flex items-center gap-1 text-sm text-slate-600 hover:text-slate-900"
+    >
+      <ArrowLeft className="h-4 w-4" aria-hidden /> {tenderId ? "Back to tender" : "All tenders"}
     </a>
   );
 }

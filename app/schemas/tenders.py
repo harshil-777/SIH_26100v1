@@ -19,6 +19,19 @@ class TenderCreate(BaseModel):
     eligibility_rules_json: dict | None = None
 
 
+class TenderListItem(BaseModel):
+    tender_id: str
+    title: str
+    department: str
+    category: str
+    estimated_value_inr: Decimal
+    msme_reserved: bool
+    submission_deadline: date
+    participant_count: int
+    awaiting_decision_count: int
+    worst_risk_level: Literal["Low", "Medium", "High", "Non-Compliant"] | None
+
+
 class TenderOut(BaseModel):
     tender_id: str
     title: str

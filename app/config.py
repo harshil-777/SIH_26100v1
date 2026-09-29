@@ -17,6 +17,20 @@ class Settings(BaseSettings):
     max_upload_mb: int = 10
     ocr_max_pages: int = 5
 
+    # Trained models (ml/), published to Hugging Face. Off by default: pulling them in means a
+    # multi-hundred-MB download + torch/transformers import on first use. When off, the app runs
+    # exactly as before (regex extraction, rule-engine-only risk, template recommendation).
+    ml_models_enabled: bool = False
+    ml_extraction_model: str = "HarshilDaGoat/gem-certificate-extractor"
+    ml_risk_model: str = "HarshilDaGoat/gem-bid-risk"
+    ml_recommendation_model: str = "HarshilDaGoat/gem-recommendation-writer"
+    ml_device: str | None = None  # None: cuda if available, else cpu
+
+    # Comma-separated browser origins allowed to call this API (app/main.py's CORSMiddleware).
+    # localhost:5173 (the Vite dev server) is always allowed in addition to whatever's listed
+    # here, so this only needs the deployed frontend's origin, e.g. https://your-app.vercel.app
+    cors_origins: str = ""
+
 
 @lru_cache
 def get_settings() -> Settings:

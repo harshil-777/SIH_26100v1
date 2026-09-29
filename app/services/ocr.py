@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.db.session import SessionLocal
 from app.models import BidDocumentSubmission, Document
+from app.services import ml_models
 from app.services.object_store import get_object_store
 
 FILE_EXTENSIONS = {"pdf": ".pdf", "png": ".png", "jpeg": ".jpg", "tiff": ".tiff"}
@@ -228,7 +229,12 @@ def extract_document(data: bytes, file_hash: str) -> dict:
     )
     if _meaningful_chars(text) == 0:
         return {**result, "status": "no_text"}
-    return {**result, "status": "extracted", "fields": parse_fields(text)}
+
+    ml_result = ml_models.extract_fields(text)
+    if ml_result is not None:
+        return {**result, "status": "extracted", "fields": ml_result["fields"],
+                "field_confidence": ml_result["confidence"], "extraction_source": "ml"}
+    return {**result, "status": "extracted", "fields": parse_fields(text), "extraction_source": "regex"}
 
 
 def _needs_extraction(doc: Document) -> bool:

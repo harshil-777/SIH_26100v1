@@ -15,3 +15,12 @@ python-multipart==0.0.20
 pdfplumber==0.11.10
 pytesseract==0.3.13
 pillow==12.3.0
+
+# Trained models (ml/), optional: only imported when ML_MODELS_ENABLED=true
+# (app/services/ml_models.py). Everything else runs fine without these installed.
+#   CPU:  pip install torch --index-url https://download.pytorch.org/whl/cpu
+#   GPU:  see https://pytorch.org/get-started/locally/
+# then: pip install -r requirements.txt
+transformers==5.17.0
+lightgbm==4.7.0
+huggingface_hub==1.33.0
