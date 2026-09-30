@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.session import get_session
+from app.db.session import get_readonly_session
 from app.models import Bid, Bidder, BidMark, ComplianceScore, Tender
 from app.schemas.dashboard import DashboardBid
 
@@ -12,7 +12,7 @@ router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 @router.get("/bids", response_model=list[DashboardBid])
 async def list_bids(
     tender_id: str | None = None,
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_readonly_session),
 ) -> list[DashboardBid]:
     latest_score = (
         select(ComplianceScore)

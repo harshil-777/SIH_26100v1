@@ -3,7 +3,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.session import get_session
+from app.db.session import get_readonly_session, get_session
 from app.models import Bid, Bidder, BidMark, ComplianceScore, Tender
 from app.schemas.marks import MarkedBidOut, MarkIn, MarkOut
 
@@ -11,7 +11,7 @@ router = APIRouter(tags=["marks"])
 
 
 @router.get("/marks", response_model=list[MarkedBidOut])
-async def list_marked_bids(session: AsyncSession = Depends(get_session)) -> list[MarkedBidOut]:
+async def list_marked_bids(session: AsyncSession = Depends(get_readonly_session)) -> list[MarkedBidOut]:
     """Every bid an officer has flagged to check later, newest mark first."""
     latest_score = (
         select(ComplianceScore)

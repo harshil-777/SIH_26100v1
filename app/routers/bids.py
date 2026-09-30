@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.celery_app import celery_app
 from app.config import get_settings
-from app.db.session import get_session
+from app.db.session import get_readonly_session, get_session
 from app.models import (
     Bid,
     BidDeclaration,
@@ -83,7 +83,7 @@ async def create_bid(payload: BidCreate, session: AsyncSession = Depends(get_ses
 
 
 @router.get("/{bid_id}", response_model=BidDetailOut)
-async def get_bid(bid_id: str, session: AsyncSession = Depends(get_session)) -> BidDetailOut:
+async def get_bid(bid_id: str, session: AsyncSession = Depends(get_readonly_session)) -> BidDetailOut:
     bid = await _get_bid_or_404(session, bid_id)
     bidder = await session.get(Bidder, bid.bidder_id)
     tender = await session.get(Tender, bid.tender_id)
@@ -212,7 +212,7 @@ async def upload_document(
 
 
 @router.get("/{bid_id}/documents", response_model=list[DocumentOut])
-async def list_documents(bid_id: str, session: AsyncSession = Depends(get_session)) -> list[DocumentOut]:
+async def list_documents(bid_id: str, session: AsyncSession = Depends(get_readonly_session)) -> list[DocumentOut]:
     await _get_bid_or_404(session, bid_id)
 
     submissions = (
@@ -304,7 +304,7 @@ async def verify_bid(bid_id: str, session: AsyncSession = Depends(get_session)) 
 
 
 @router.get("/{bid_id}/status", response_model=StatusOut)
-async def get_bid_status(bid_id: str, session: AsyncSession = Depends(get_session)) -> StatusOut:
+async def get_bid_status(bid_id: str, session: AsyncSession = Depends(get_readonly_session)) -> StatusOut:
     await _get_bid_or_404(session, bid_id)
 
     result = AsyncResult(bid_id, app=celery_app)
@@ -332,7 +332,7 @@ async def get_bid_status(bid_id: str, session: AsyncSession = Depends(get_sessio
 
 @router.get("/{bid_id}/compliance-score", response_model=ComplianceScoreOut)
 async def get_compliance_score(
-    bid_id: str, session: AsyncSession = Depends(get_session)
+    bid_id: str, session: AsyncSession = Depends(get_readonly_session)
 ) -> ComplianceScoreOut:
     await _get_bid_or_404(session, bid_id)
 
@@ -362,7 +362,7 @@ async def get_compliance_score(
 
 
 @router.get("/{bid_id}/audit-log", response_model=AuditLogOut)
-async def get_bid_audit_log(bid_id: str, session: AsyncSession = Depends(get_session)) -> AuditLogOut:
+async def get_bid_audit_log(bid_id: str, session: AsyncSession = Depends(get_readonly_session)) -> AuditLogOut:
     await _get_bid_or_404(session, bid_id)
     rows = await get_audit_log(session, bid_id)
     chain_valid, broken_at = verify_chain(rows)

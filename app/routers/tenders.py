@@ -3,7 +3,7 @@ from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.fixtures import build_eligibility_rules_typed
-from app.db.session import get_session
+from app.db.session import get_readonly_session, get_session
 from app.models import Bid, ComplianceScore, Tender, TenderDocumentRequirement
 from app.schemas.tenders import DocumentRequirementOut, TenderCreate, TenderListItem, TenderOut
 
@@ -14,7 +14,7 @@ _RANK_TO_RISK = {v: k for k, v in _RISK_RANK.items()}
 
 
 @router.get("", response_model=list[TenderListItem])
-async def list_tenders(session: AsyncSession = Depends(get_session)) -> list[TenderListItem]:
+async def list_tenders(session: AsyncSession = Depends(get_readonly_session)) -> list[TenderListItem]:
     """Landing-page list: one row per tender, with how many bidders are participating."""
     latest_score = (
         select(ComplianceScore)
@@ -100,7 +100,7 @@ async def create_tender(
 
 
 @router.get("/{tender_id}", response_model=TenderOut)
-async def get_tender(tender_id: str, session: AsyncSession = Depends(get_session)) -> Tender:
+async def get_tender(tender_id: str, session: AsyncSession = Depends(get_readonly_session)) -> Tender:
     tender = await session.get(Tender, tender_id)
     if tender is None:
         raise HTTPException(404, f"Tender {tender_id!r} not found")
@@ -111,7 +111,7 @@ async def get_tender(tender_id: str, session: AsyncSession = Depends(get_session
     "/{tender_id}/document-requirements", response_model=list[DocumentRequirementOut]
 )
 async def list_document_requirements(
-    tender_id: str, session: AsyncSession = Depends(get_session)
+    tender_id: str, session: AsyncSession = Depends(get_readonly_session)
 ) -> list[TenderDocumentRequirement]:
     tender = await session.get(Tender, tender_id)
     if tender is None:

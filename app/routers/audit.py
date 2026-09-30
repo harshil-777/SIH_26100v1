@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.session import get_session
+from app.db.session import get_readonly_session
 from app.models import AuditLog, Bid, Bidder, Tender
 from app.schemas.audit import AuditVerifyOut, RecentAuditEntry, TenderAuditSummary
 from app.services.audit import verify_all_chains
@@ -13,7 +13,7 @@ router = APIRouter(prefix="/audit", tags=["audit"])
 
 
 @router.get("/verify", response_model=AuditVerifyOut)
-async def verify_audit_log(session: AsyncSession = Depends(get_session)) -> AuditVerifyOut:
+async def verify_audit_log(session: AsyncSession = Depends(get_readonly_session)) -> AuditVerifyOut:
     """Recompute every bid's hash chain across the whole audit_log and report any break."""
     result = await verify_all_chains(session)
     # Attach each break's tender, so the audit view can show integrity per tender.
@@ -24,7 +24,7 @@ async def verify_audit_log(session: AsyncSession = Depends(get_session)) -> Audi
 
 
 @router.get("/tenders", response_model=list[TenderAuditSummary])
-async def audit_by_tender(session: AsyncSession = Depends(get_session)) -> list[TenderAuditSummary]:
+async def audit_by_tender(session: AsyncSession = Depends(get_readonly_session)) -> list[TenderAuditSummary]:
     """Audit activity rolled up per tender: how many verifications and decisions it has seen."""
     stmt = (
         select(
@@ -50,7 +50,7 @@ async def audit_by_tender(session: AsyncSession = Depends(get_session)) -> list[
 async def recent_activity(
     limit: int = Query(20, ge=1, le=1000),
     tender_id: str | None = None,
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_readonly_session),
 ) -> list[RecentAuditEntry]:
     """Newest audit entries across every bid, or across one tender's bids."""
     stmt = (

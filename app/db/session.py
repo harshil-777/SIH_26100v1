@@ -32,9 +32,23 @@ engine = create_async_engine(
 
 SessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 
+# Read-only routes don't need SQLAlchemy's normal BEGIN ... COMMIT/ROLLBACK wrapper -- under
+# AUTOCOMMIT each statement is already its own implicit transaction server-side. That wrapper is
+# 2 extra network round trips per request that only exist to make a rollback possible, which a
+# route that never writes will never need -- worth cutting given the deployed database is a
+# ~150-200ms one-way trip away (Railway in Singapore, Postgres in Seoul). execution_options()
+# returns a proxy sharing the same engine/pool, not a second one.
+_readonly_engine = engine.execution_options(isolation_level="AUTOCOMMIT")
+ReadOnlySessionLocal = async_sessionmaker(_readonly_engine, expire_on_commit=False)
+
 
 async def get_session() -> AsyncIterator[AsyncSession]:
 
     async with SessionLocal() as session:
 
+        yield session
+
+
+async def get_readonly_session() -> AsyncIterator[AsyncSession]:
+    async with ReadOnlySessionLocal() as session:
         yield session
