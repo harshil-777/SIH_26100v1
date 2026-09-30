@@ -1,4 +1,6 @@
+import asyncio
 import logging
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -6,10 +8,21 @@ from fastapi.responses import JSONResponse
 
 from app.config import get_settings
 from app.routers import audit, bids, dashboard, tenders
+from app.services import ml_models
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Bid-Auth", version="0.1.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Not awaited: the server starts answering (health checks, tender lists) immediately while
+    # the models load in a worker thread, instead of the first "Run verification" click paying
+    # for the whole download + load.
+    app.state.ml_warm_up = asyncio.create_task(asyncio.to_thread(ml_models.warm_up))
+    yield
+
+
+app = FastAPI(title="Bid-Auth", version="0.1.0", lifespan=lifespan)
 
 
 # Registered before CORSMiddleware so it sits *inside* it: an unhandled error then becomes a

@@ -9,6 +9,8 @@ dedicated resume checkpoint. Stages 2 (documents.ocr_extracted_json) and 3
 completion; a rerun skips OCR for documents already extracted. Stage 6 (compliance_scores)
 and 8 (audit_log) are the pipeline's durable outputs.
 """
+import asyncio
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -70,15 +72,21 @@ async def run_pipeline(session: AsyncSession, bid: Bid, tender: Tender) -> dict:
     # Advisory only, attached to the persisted breakdown but never read by scoring.py --
     # it cannot change overall_score or risk_level. None (the ordinary case when
     # ML_MODELS_ENABLED is unset) simply omits the key.
-    ml_risk = ml_models.risk_estimate(tender, facts)
+    # asyncio.to_thread: risk_estimate does real CPU work (model load on first call, LightGBM
+    # inference after) -- run synchronously in this coroutine it would block the whole event
+    # loop (single Uvicorn worker, no --workers), freezing every other in-flight request,
+    # including unrelated ones like /health, for however long it takes.
+    ml_risk = await asyncio.to_thread(ml_models.risk_estimate, tender, facts)
     if ml_risk is not None:
         score_row.criterion_breakdown_json["ml_risk_estimate"] = ml_risk
     session.add(score_row)
     await session.flush()
 
-    # Stage 7: recommendation (display-only, never persisted)
-    recommendation_result = recommend(
-        score_row.overall_score, score_row.risk_level, score_row.criterion_breakdown_json
+    # Stage 7: recommendation (display-only, never persisted). Same asyncio.to_thread reason
+    # as above -- this one's worse in practice, since it's a flan-t5-small generate() call
+    # (or a full model load + download on the very first call), the slowest single step here.
+    recommendation_result = await asyncio.to_thread(
+        recommend, score_row.overall_score, score_row.risk_level, score_row.criterion_breakdown_json
     )
     recommendation = recommendation_result["text"]
 

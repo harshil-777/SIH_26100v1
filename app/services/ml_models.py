@@ -12,6 +12,7 @@ unchanged. The ml/ package needs to be on the Python path -- it lives at the rep
 alongside app/, so this just works when the app runs from the repo root (as it always does).
 """
 import logging
+import threading
 from functools import lru_cache
 from typing import Any
 
@@ -68,12 +69,32 @@ def _load_once(name: str, loader) -> Any:
         return None
 
 
+# lru_cache doesn't stop two threads racing on the same first load; without this a request
+# arriving during warm_up() would start a second full copy of the same model.
+_load_lock = threading.Lock()
+
+
+def _get(name: str, loader) -> Any:
+    with _load_lock:
+        return _load_once(name, loader)
+
+
+def warm_up() -> None:
+    """Loads all three models up front, so the first real request doesn't pay for the
+    download and load."""
+    if not get_settings().ml_models_enabled:
+        return
+    for name, loader in (("extraction", _extractor), ("risk", _risk_model), ("recommendation", _recommender)):
+        _get(name, loader)
+    logger.info("ML models warmed up")
+
+
 def extract_fields(text: str) -> dict | None:
     """{"fields": {...}, "confidence": {...}} from the trained extractor, or None to fall
     back to app/services/ocr.py's regex parser."""
     if not get_settings().ml_models_enabled:
         return None
-    extractor = _load_once("extraction", _extractor)
+    extractor = _get("extraction", _extractor)
     if extractor is None:
         return None
     try:
@@ -107,7 +128,7 @@ def risk_estimate(tender, facts) -> dict | None:
     """{"risk_level", "probabilities", "top_factors"} from the trained model, or None."""
     if not get_settings().ml_models_enabled:
         return None
-    model = _load_once("risk", _risk_model)
+    model = _get("risk", _risk_model)
     if model is None:
         return None
     try:
@@ -124,7 +145,7 @@ def recommend(overall_score, risk_level: str, breakdown: dict) -> dict | None:
     app/services/recommendation.py's deterministic text."""
     if not get_settings().ml_models_enabled:
         return None
-    recommender = _load_once("recommendation", _recommender)
+    recommender = _get("recommendation", _recommender)
     if recommender is None:
         return None
     try:
