@@ -14,7 +14,7 @@
 #
 # Usage:
 #   ./deploy/deploy_cloudrun.sh [service-name] [region]
-#   (defaults: gem-compliance-api, us-central1)
+#   (defaults: bid-auth, us-central1)
 #
 # Reads DATABASE_URL from .env in the repo root -- never pass it as a command-line argument,
 # which would land in your shell history.

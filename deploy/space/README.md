@@ -1,5 +1,5 @@
 ---
-title: GeM Bid Compliance API
+title: Bid-Auth API
 emoji: 📋
 colorFrom: emerald
 colorTo: blue
@@ -8,9 +8,9 @@ app_port: 7860
 pinned: false
 ---
 
-# GeM Bid Compliance API
+# Bid-Auth API
 
-FastAPI backend for the GeM Bid Compliance platform: verification pipeline, rule engine, and
+FastAPI backend for Bid-Auth: verification pipeline, rule engine, and
 three trained models loaded from Hugging Face at startup
 ([extraction](https://huggingface.co/HarshilDaGoat/gem-certificate-extractor),
 [risk](https://huggingface.co/HarshilDaGoat/gem-bid-risk),

@@ -68,7 +68,7 @@ can.
 
 **Push the code:**
 ```bash
-./deploy/push_to_space.sh https://huggingface.co/spaces/YOUR_USERNAME/gem-compliance-api
+./deploy/push_to_space.sh https://huggingface.co/spaces/YOUR_USERNAME/bid-auth
 ```
 Prompts for git credentials on push — username can be anything, password is an HF **write**
 token (Settings → Access Tokens). Pushes only the runtime files (`app/`, `alembic.ini`,

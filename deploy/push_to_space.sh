@@ -17,7 +17,7 @@ set -euo pipefail
 
 if [ $# -ne 1 ]; then
   echo "Usage: $0 <hugging-face-space-git-url>" >&2
-  echo "e.g.:  $0 https://huggingface.co/spaces/YOUR_USERNAME/gem-compliance-api" >&2
+  echo "e.g.:  $0 https://huggingface.co/spaces/YOUR_USERNAME/bid-auth" >&2
   exit 1
 fi
 SPACE_URL="$1"
