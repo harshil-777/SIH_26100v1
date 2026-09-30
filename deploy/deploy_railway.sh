@@ -95,6 +95,11 @@ echo "Setting environment variables ..."
   railway variable set "ML_MODELS_ENABLED=true"
   railway variable set "SYNC_PIPELINE=true"
   railway variable set "CORS_ORIGINS=$FRONTEND_ORIGIN"
+  # Single API process, no Celery worker on this platform (see SYNC_PIPELINE above), so it's
+  # safe to keep connections open between requests instead of paying a fresh TLS handshake to
+  # Supabase (in Seoul) on every single request -- this was set on the Cloud Run image but had
+  # been missed here, leaving Railway on NullPool the whole time.
+  railway variable set "DB_POOL_SIZE=5"
   # Clear these in case an earlier run of this script set them before this limitation was found --
   # harmless no-ops if they were never set.
   railway variable delete "ML_EXTRACTION_MODEL" 2>/dev/null || true

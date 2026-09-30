@@ -154,13 +154,27 @@ export function ParticipantsTable({ bids }: { bids: DashboardBid[] }) {
         {/* Phones get cards: too many columns to fit in 390px without hiding the score. */}
         <ul className="divide-y divide-slate-100 md:hidden">
           {visible.map((bid) => (
-            <li key={bid.bid_id} className="relative flex items-start">
-              <a href={bidHref(bid.bid_id)} className="flex min-w-0 flex-1 gap-3 py-3.5 pl-4 hover:bg-slate-50">
+            <li key={bid.bid_id}>
+              <div
+                onClick={() => navigate(bidHref(bid.bid_id))}
+                className="flex cursor-pointer gap-3 px-4 py-3.5 hover:bg-slate-50"
+              >
                 <Avatar name={bid.bidder_name} />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="truncate font-medium text-slate-900">{bid.bidder_name}</div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1">
+                        <a
+                          href={bidHref(bid.bid_id)}
+                          onClick={(event) => event.stopPropagation()}
+                          className="truncate font-medium text-slate-900 hover:text-brand-700"
+                        >
+                          {bid.bidder_name}
+                        </a>
+                        <span onClick={(event) => event.stopPropagation()}>
+                          <MarkButton bidId={bid.bid_id} bidder={bid.bidder_name} marked={marked.has(bid.bid_id)} onChange={(on) => setMark(bid.bid_id, on)} />
+                        </span>
+                      </div>
                       <div className="font-mono text-[11px] text-slate-400">{bid.bid_id}</div>
                     </div>
                     <ScoreCell score={toNumber(bid.overall_score)} />
@@ -170,9 +184,6 @@ export function ParticipantsTable({ bids }: { bids: DashboardBid[] }) {
                     <StatusBadge status={bid.status} />
                   </div>
                 </div>
-              </a>
-              <div className="px-2 pt-3">
-                <MarkButton bidId={bid.bid_id} bidder={bid.bidder_name} marked={marked.has(bid.bid_id)} onChange={(on) => setMark(bid.bid_id, on)} />
               </div>
             </li>
           ))}
@@ -187,10 +198,6 @@ export function ParticipantsTable({ bids }: { bids: DashboardBid[] }) {
                 <th className="px-4 py-3 font-medium">Risk</th>
                 <th className="px-4 py-3 font-medium">Status</th>
                 <SortHeader label="Submitted" active={sort.key === "submitted"} dir={sort.dir} onClick={() => toggleSort("submitted")} />
-                <th className="w-12 px-2 py-3 text-center font-medium">
-                  <span className="sr-only">Mark for later</span>
-                  <Bookmark className="mx-auto h-3.5 w-3.5" aria-hidden />
-                </th>
                 <th className="w-10" />
               </tr>
             </thead>
@@ -201,13 +208,18 @@ export function ParticipantsTable({ bids }: { bids: DashboardBid[] }) {
                     <div className="flex items-center gap-3">
                       <Avatar name={bid.bidder_name} />
                       <div className="min-w-0">
-                        <a
-                          href={bidHref(bid.bid_id)}
-                          onClick={(event) => event.stopPropagation()}
-                          className="block truncate font-medium text-slate-900 hover:text-brand-700"
-                        >
-                          {bid.bidder_name}
-                        </a>
+                        <div className="flex items-center gap-1">
+                          <a
+                            href={bidHref(bid.bid_id)}
+                            onClick={(event) => event.stopPropagation()}
+                            className="truncate font-medium text-slate-900 hover:text-brand-700"
+                          >
+                            {bid.bidder_name}
+                          </a>
+                          <span onClick={(event) => event.stopPropagation()}>
+                            <MarkButton bidId={bid.bid_id} bidder={bid.bidder_name} marked={marked.has(bid.bid_id)} onChange={(on) => setMark(bid.bid_id, on)} />
+                          </span>
+                        </div>
                         <div className="whitespace-nowrap text-xs text-slate-500">
                           <span className="font-mono">{bid.bid_id}</span> · {bid.enterprise_category ?? "—"}
                         </div>
@@ -226,9 +238,6 @@ export function ParticipantsTable({ bids }: { bids: DashboardBid[] }) {
                   <td className="whitespace-nowrap px-4 py-3 text-[13px] text-slate-500" title={formatDate(bid.submitted_at)}>
                     {new Date(bid.submitted_at).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
                   </td>
-                  <td className="px-2 py-3 text-center" onClick={(event) => event.stopPropagation()}>
-                    <MarkButton bidId={bid.bid_id} bidder={bid.bidder_name} marked={marked.has(bid.bid_id)} onChange={(on) => setMark(bid.bid_id, on)} />
-                  </td>
                   <td className="pr-4 text-slate-300">
                     <ChevronRight className="h-4 w-4 transition group-hover:translate-x-0.5 group-hover:text-slate-500" aria-hidden />
                   </td>
@@ -236,7 +245,7 @@ export function ParticipantsTable({ bids }: { bids: DashboardBid[] }) {
               ))}
               {visible.length === 0 && (
                 <tr>
-                  <td colSpan={7}>
+                  <td colSpan={6}>
                     <EmptyState icon={SearchX} title="No bids match these filters">
                       {filtered && (
                         <button type="button" onClick={clearFilters} className="font-medium text-brand-700 hover:underline">
