@@ -99,17 +99,24 @@ async def run_pipeline(session: AsyncSession, bid: Bid, tender: Tender) -> dict:
     ml_risk = await asyncio.to_thread(ml_models.risk_estimate, tender, facts)
     if ml_risk is not None:
         score_row.criterion_breakdown_json["ml_risk_estimate"] = ml_risk
-    session.add(score_row)
-    await session.flush()
     clock.lap("scoring_and_ml_risk")
 
-    # Stage 7: recommendation (display-only, never persisted). Same asyncio.to_thread reason
-    # as above -- this one's worse in practice, since it's a flan-t5-small generate() call
-    # (or a full model load + download on the very first call), the slowest single step here.
+    # Stage 7: recommendation (display-only; the officer's decision is the only persisted
+    # verdict). Computed once here and stored in the same breakdown JSON, not recomputed on
+    # every later GET /compliance-score -- with ML_MODELS_ENABLED, "recompute on every page
+    # view" meant a flan-t5-small generate() call (1-9s, see stage timing below) on every single
+    # visit to a bid's page, which is what made the whole site feel slow. See bids.py's
+    # get_compliance_score for the read side.
     recommendation_result = await asyncio.to_thread(
         recommend, score_row.overall_score, score_row.risk_level, score_row.criterion_breakdown_json
     )
     recommendation = recommendation_result["text"]
+    score_row.criterion_breakdown_json["recommendation"] = {
+        "text": recommendation,
+        "source": recommendation_result["source"],
+    }
+    session.add(score_row)
+    await session.flush()
     clock.lap("recommendation")
 
     # Stage 8: audit write

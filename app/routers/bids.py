@@ -347,17 +347,21 @@ async def get_compliance_score(
     if score is None:
         raise HTTPException(404, f"No compliance score yet for bid {bid_id!r}")
 
-    recommendation_result = recommend(
-        score.overall_score, score.risk_level, score.criterion_breakdown_json
-    )
+    # The pipeline stores the recommendation it generated at verify-time (see
+    # orchestrator.py). Only a score written before that existed would lack it -- computed
+    # fresh here as a one-time fallback rather than recomputing (possibly re-running the ML
+    # model) on every single page view, which is what made this endpoint slow.
+    stored = score.criterion_breakdown_json.get("recommendation")
+    if stored is None:
+        stored = recommend(score.overall_score, score.risk_level, score.criterion_breakdown_json)
     return ComplianceScoreOut(
         bid_id=bid_id,
         overall_score=score.overall_score,
         risk_level=score.risk_level,
         criterion_breakdown_json=score.criterion_breakdown_json,
         generated_at=score.generated_at,
-        recommendation=recommendation_result["text"],
-        recommendation_source=recommendation_result["source"],
+        recommendation=stored["text"],
+        recommendation_source=stored["source"],
     )
 
 
