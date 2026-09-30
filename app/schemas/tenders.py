@@ -30,6 +30,10 @@ class TenderListItem(BaseModel):
     participant_count: int
     awaiting_decision_count: int
     worst_risk_level: Literal["Low", "Medium", "High", "Non-Compliant"] | None
+    # Participants per latest risk level, keyed "Low" / "Medium" / "High" / "Non-Compliant" /
+    # "unverified" -- drives the per-tender risk distribution bar.
+    risk_counts: dict[str, int]
+    average_score: Decimal | None
 
 
 class TenderOut(BaseModel):

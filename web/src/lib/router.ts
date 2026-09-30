@@ -1,16 +1,23 @@
 import { useEffect, useState } from "react";
 
 export type Route =
+  | { name: "overview" }
   | { name: "tenders" }
   | { name: "tender"; tenderId: string }
-  | { name: "bid"; bidId: string };
+  | { name: "bids" }
+  | { name: "bid"; bidId: string }
+  | { name: "audit" };
 
 function parse(hash: string): Route {
-  const bid = hash.match(/^#\/bids\/(.+)$/);
+  const path = hash.replace(/^#/, "").split("?")[0].replace(/\/+$/, "");
+  const bid = path.match(/^\/bids\/(.+)$/);
   if (bid) return { name: "bid", bidId: decodeURIComponent(bid[1]) };
-  const tender = hash.match(/^#\/tenders\/(.+)$/);
+  const tender = path.match(/^\/tenders\/(.+)$/);
   if (tender) return { name: "tender", tenderId: decodeURIComponent(tender[1]) };
-  return { name: "tenders" };
+  if (path === "/tenders") return { name: "tenders" };
+  if (path === "/bids") return { name: "bids" };
+  if (path === "/audit") return { name: "audit" };
+  return { name: "overview" };
 }
 
 export function useRoute(): Route {
@@ -26,5 +33,15 @@ export function useRoute(): Route {
   return route;
 }
 
+export const navigate = (href: string) => {
+  window.location.hash = href.replace(/^#/, "");
+};
+
+export const overviewHref = "#/";
+export const tendersHref = "#/tenders";
+export const bidsHref = "#/bids";
+export const auditHref = "#/audit";
+export const reviewQueueHref = "#/bids?status=awaiting";
+export const hashParam = (key: string) => new URLSearchParams(window.location.hash.split("?")[1] ?? "").get(key);
 export const bidHref = (bidId: string) => `#/bids/${encodeURIComponent(bidId)}`;
 export const tenderHref = (tenderId: string) => `#/tenders/${encodeURIComponent(tenderId)}`;

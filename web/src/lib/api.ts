@@ -18,6 +18,19 @@ export type TenderListItem = {
   participant_count: number;
   awaiting_decision_count: number;
   worst_risk_level: RiskLevel | null;
+  risk_counts: Record<RiskLevel | "unverified", number>;
+  average_score: Numeric | null;
+};
+
+export type RecentAuditEntry = {
+  log_id: number;
+  bid_id: string | null;
+  bidder_name: string | null;
+  tender_id: string | null;
+  actor: string;
+  action: string;
+  payload_json: Record<string, unknown> | null;
+  timestamp: string;
 };
 
 export type TenderOut = {
@@ -32,6 +45,19 @@ export type TenderOut = {
   epfo_applicable_employee_threshold: number | null;
   submission_deadline: string;
   created_at: string;
+  eligibility_rules_json: {
+    criteria: { id: string; type: "mandatory" | "graded"; source?: string; weight?: number; threshold?: number }[];
+  } | null;
+};
+
+export type DocumentRequirement = {
+  requirement_id: string;
+  tender_id: string;
+  document_type: string;
+  buyer_label: string | null;
+  requirement_source: string;
+  mandatory: boolean;
+  notes: string | null;
 };
 
 export type DashboardBid = {
@@ -227,14 +253,18 @@ const json = (body: unknown): RequestInit => ({
 });
 
 export const api = {
+  health: () => request<{ status: string }>("/health"),
   listTenders: () => request<TenderListItem[]>("/tenders"),
   getTender: (tenderId: string) => request<TenderOut>(`/tenders/${encodeURIComponent(tenderId)}`),
+  getDocumentRequirements: (tenderId: string) =>
+    request<DocumentRequirement[]>(`/tenders/${encodeURIComponent(tenderId)}/document-requirements`),
   listBids: (tenderId?: string) =>
     request<DashboardBid[]>(`/dashboard/bids${tenderId ? `?tender_id=${encodeURIComponent(tenderId)}` : ""}`),
   getBid: (bidId: string) => request<BidDetail>(`/bids/${encodeURIComponent(bidId)}`),
   getDocuments: (bidId: string) => request<BidDocument[]>(`/bids/${encodeURIComponent(bidId)}/documents`),
   getAuditLog: (bidId: string) => request<AuditLog>(`/bids/${encodeURIComponent(bidId)}/audit-log`),
   verifyAuditLog: () => request<AuditVerification>("/audit/verify"),
+  recentActivity: (limit = 20) => request<RecentAuditEntry[]>(`/audit/recent?limit=${limit}`),
   getJobStatus: (bidId: string) => request<JobStatus>(`/bids/${encodeURIComponent(bidId)}/status`),
 
   // 404 here just means the bid has never been verified -- not an error for the UI.

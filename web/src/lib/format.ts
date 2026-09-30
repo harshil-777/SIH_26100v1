@@ -59,6 +59,60 @@ export const formatDate = (iso: string) => new Date(iso).toLocaleDateString("en-
 export const formatInr = (value: number) =>
   new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(value);
 
+// Indian-system short form for headline figures: 4,50,00,000 -> "₹4.5 Cr".
+export const formatInrCompact = (value: number) => {
+  const trim = (n: number) => n.toFixed(n >= 100 ? 0 : 1).replace(/\.0$/, "");
+  if (value >= 1e7) return `₹${trim(value / 1e7)} Cr`;
+  if (value >= 1e5) return `₹${trim(value / 1e5)} L`;
+  return formatInr(value);
+};
+
+const DAY_MS = 86_400_000;
+
+// Whole calendar days from today to a YYYY-MM-DD deadline; negative once it has passed.
+export const daysUntil = (isoDate: string) => {
+  const [year, month, day] = isoDate.slice(0, 10).split("-").map(Number);
+  const now = new Date();
+  return Math.round((Date.UTC(year, month - 1, day) - Date.UTC(now.getFullYear(), now.getMonth(), now.getDate())) / DAY_MS);
+};
+
+export const deadlineLabel = (isoDate: string) => {
+  const days = daysUntil(isoDate);
+  if (days < 0) return `Closed ${-days}d ago`;
+  if (days === 0) return "Closes today";
+  if (days === 1) return "Closes tomorrow";
+  return `${days} days left`;
+};
+
+export const deadlineTone = (isoDate: string) => {
+  const days = daysUntil(isoDate);
+  if (days < 0) return "text-slate-500";
+  if (days <= 7) return "text-red-700";
+  if (days <= 21) return "text-amber-700";
+  return "text-slate-600";
+};
+
+export const formatRelative = (iso: string) => {
+  const seconds = Math.round((Date.now() - new Date(iso).getTime()) / 1000);
+  if (seconds < 60) return "just now";
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.round(hours / 24);
+  if (days < 30) return `${days}d ago`;
+  return formatDate(iso);
+};
+
+export const initials = (name: string) =>
+  name
+    .replace(/\b(pvt|ltd|llp|private|limited|inc|co)\b\.?/gi, "")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((word) => word[0]!.toUpperCase())
+    .join("");
+
 export const formatValue = (value: unknown): string => {
   if (value === null || value === undefined || value === "") return "—";
   if (typeof value === "boolean") return value ? "Yes" : "No";

@@ -38,6 +38,12 @@ async def list_tenders(session: AsyncSession = Depends(get_session)) -> list[Ten
                 "awaiting_decision_count"
             ),
             func.max(risk_rank).label("worst_risk_rank"),
+            *[
+                func.count(Bid.bid_id).filter(latest_score.c.risk_level == risk).label(f"n_{rank}")
+                for risk, rank in _RISK_RANK.items()
+            ],
+            func.count(Bid.bid_id).filter(latest_score.c.risk_level.is_(None)).label("n_unverified"),
+            func.avg(latest_score.c.overall_score).label("average_score"),
         )
         .outerjoin(Bid, Bid.tender_id == Tender.tender_id)
         .outerjoin(latest_score, latest_score.c.bid_id == Bid.bid_id)
@@ -46,7 +52,14 @@ async def list_tenders(session: AsyncSession = Depends(get_session)) -> list[Ten
     )
     rows = (await session.execute(stmt)).mappings().all()
     return [
-        TenderListItem(**{**row, "worst_risk_level": _RANK_TO_RISK.get(row["worst_risk_rank"])})
+        TenderListItem(
+            **row,
+            worst_risk_level=_RANK_TO_RISK.get(row["worst_risk_rank"]),
+            risk_counts={
+                **{risk: row[f"n_{rank}"] for risk, rank in _RISK_RANK.items()},
+                "unverified": row["n_unverified"],
+            },
+        )
         for row in rows
     ]
 

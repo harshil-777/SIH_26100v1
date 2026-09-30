@@ -6,7 +6,7 @@ import { STATUS_LABELS } from "@/lib/format";
 export const RISK_TONE: Record<RiskLevel, BadgeTone> = {
   Low: "success",
   Medium: "warning",
-  High: "danger",
+  High: "orange",
   "Non-Compliant": "critical",
 };
 

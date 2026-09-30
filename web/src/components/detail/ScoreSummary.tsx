@@ -4,12 +4,13 @@ import { RiskBadge } from "@/components/badges";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { toNumber, type ComplianceScore } from "@/lib/api";
 import { formatDateTime, formatScore } from "@/lib/format";
+import { RISK_STYLE } from "@/lib/risk";
 
 const RISK_COLOR: Record<string, string> = {
-  Low: "#059669",
-  Medium: "#d97706",
-  High: "#dc2626",
-  "Non-Compliant": "#991b1b",
+  Low: RISK_STYLE.Low.hex,
+  Medium: RISK_STYLE.Medium.hex,
+  High: RISK_STYLE.High.hex,
+  "Non-Compliant": RISK_STYLE["Non-Compliant"].hex,
 };
 
 const ADVISORY_PREFIX = "AI-generated, advisory only: ";

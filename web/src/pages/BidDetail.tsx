@@ -1,7 +1,12 @@
-import { ArrowLeft, Loader2, RefreshCw } from "lucide-react";
+import { AlertTriangle, CalendarDays, Loader2, MapPin, PlayCircle, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { RiskBadge } from "@/components/badges";
-import { tenderHref } from "@/lib/router";
+import { RiskBadge, StatusBadge } from "@/components/badges";
+import { Breadcrumbs } from "@/components/PageHeader";
+import { ErrorState } from "@/components/States";
+import { Skeleton } from "@/components/ui/skeleton";
+import { formatDateTime, formatScore, initials } from "@/lib/format";
+import { RISK_STYLE } from "@/lib/risk";
+import { bidsHref, overviewHref, tenderHref } from "@/lib/router";
 import { AuditChain } from "@/components/detail/AuditChain";
 import { BidderProfile } from "@/components/detail/BidderProfile";
 import { CriteriaTable } from "@/components/detail/CriteriaTable";
@@ -12,7 +17,7 @@ import { PortalChecks } from "@/components/detail/PortalChecks";
 import { ScoreSummary } from "@/components/detail/ScoreSummary";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody } from "@/components/ui/card";
-import { api, ApiError, type AuditLog, type BidDetail as Bid, type BidDocument, type ComplianceScore } from "@/lib/api";
+import { api, ApiError, toNumber, type AuditLog, type BidDetail as Bid, type BidDocument, type ComplianceScore } from "@/lib/api";
 
 type Data = { bid: Bid; score: ComplianceScore | null; documents: BidDocument[]; audit: AuditLog };
 
@@ -93,23 +98,31 @@ export default function BidDetail({ bidId }: { bidId: string }) {
 
   if (error) {
     return (
-      <div className="space-y-4">
-        <BackLink tenderId={null} />
-        <Card className="border-red-200 bg-red-50">
-          <CardBody className="text-sm text-red-800">
-            {error.status === 404 ? `Bid ${bidId} was not found.` : `Failed to load this bid: ${error.message}`}
-          </CardBody>
-        </Card>
+      <div className="page-enter space-y-5">
+        <Breadcrumbs crumbs={[{ label: "Overview", href: overviewHref }, { label: "Bids", href: bidsHref }, { label: bidId }]} />
+        <ErrorState
+          title={error.status === 404 ? "Bid not found" : "Couldn't load this bid"}
+          message={error.status === 404 ? `There is no bid with ID ${bidId}.` : error.message}
+          onRetry={error.status === 404 ? undefined : load}
+        />
       </div>
     );
   }
 
   if (!data) {
     return (
-      <div className="space-y-4">
-        <BackLink tenderId={null} />
-        <div className="flex items-center gap-2 text-sm text-slate-500">
-          <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> Loading bid…
+      <div className="space-y-5">
+        <Skeleton className="h-4 w-64" />
+        <Card className="flex items-center gap-5 p-6">
+          <Skeleton className="h-16 w-16 rounded-2xl" />
+          <div className="flex-1 space-y-2">
+            <Skeleton className="h-7 w-1/3" />
+            <Skeleton className="h-4 w-1/2" />
+          </div>
+        </Card>
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
+          <Skeleton className="h-80 rounded-xl" />
+          <Skeleton className="h-80 rounded-xl" />
         </div>
       </div>
     );
@@ -122,30 +135,80 @@ export default function BidDetail({ bidId }: { bidId: string }) {
     (criteria.find((c) => c.id === "document_completeness")?.evidence.not_applicable_documents as { document_type: string }[] | undefined) ?? []
   ).map((doc) => doc.document_type);
 
+  const overall = score ? toNumber(score.overall_score) : null;
+
   return (
-    <div className="space-y-5">
-      <BackLink tenderId={bid.tender.tender_id} />
+    <div className="page-enter space-y-5">
+      <Breadcrumbs
+        crumbs={[
+          { label: "Overview", href: overviewHref },
+          { label: bid.tender.tender_id, href: tenderHref(bid.tender.tender_id) },
+          { label: bid.bid_id },
+        ]}
+      />
 
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-xl font-semibold text-slate-900">{bid.bidder.name}</h1>
-            <RiskBadge risk={score?.risk_level ?? null} />
+      <Card className="overflow-hidden">
+        <div className="flex flex-wrap items-center gap-5 p-5 sm:p-6">
+          <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-500 to-brand-700 text-xl font-semibold text-white shadow-sm">
+            {initials(bid.bidder.name)}
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-2xl font-semibold tracking-tight text-slate-900">{bid.bidder.name}</h1>
+              <RiskBadge risk={score?.risk_level ?? null} />
+              <StatusBadge status={bid.status} />
+            </div>
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] text-slate-500">
+              <span className="font-mono">{bid.bid_id}</span>
+              <a href={tenderHref(bid.tender.tender_id)} className="max-w-[22rem] truncate hover:text-brand-700 hover:underline">
+                {bid.tender.title}
+              </a>
+              <span className="inline-flex items-center gap-1">
+                <CalendarDays className="h-3.5 w-3.5" aria-hidden /> Submitted {formatDateTime(bid.submitted_at)}
+              </span>
+              {bid.bidder.state && (
+                <span className="inline-flex items-center gap-1">
+                  <MapPin className="h-3.5 w-3.5" aria-hidden /> {bid.bidder.state}
+                </span>
+              )}
+            </div>
           </div>
-          <p className="mt-1 text-sm text-slate-500">
-            <span className="font-mono">{bid.bid_id}</span> · {bid.tender.title}
-          </p>
-        </div>
-        <div className="flex flex-col items-end gap-1">
-          <Button variant="outline" onClick={runVerification} disabled={verifying}>
-            {verifying ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <RefreshCw className="h-4 w-4" aria-hidden />}
-            {verifying ? "Verifying…" : score ? "Re-run verification" : "Run verification"}
-          </Button>
-          {verifyError && <p className="max-w-xs text-right text-xs text-red-700">{verifyError}</p>}
-        </div>
-      </div>
 
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
+          <div className="flex w-full items-center gap-5 sm:w-auto">
+            {overall !== null && score && (
+              <div className="border-slate-200 text-right sm:border-l sm:pl-5">
+                <div className="text-xs font-medium text-slate-500">Compliance score</div>
+                <div className="text-3xl font-semibold tabular-nums tracking-tight" style={{ color: RISK_STYLE[score.risk_level].hex }}>
+                  {formatScore(overall)}
+                  <span className="text-base font-medium text-slate-400">/100</span>
+                </div>
+              </div>
+            )}
+            <Button onClick={runVerification} disabled={verifying} variant={score ? "outline" : "primary"} className="ml-auto sm:ml-0">
+              {verifying ? (
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+              ) : score ? (
+                <RefreshCw className="h-4 w-4" aria-hidden />
+              ) : (
+                <PlayCircle className="h-4 w-4" aria-hidden />
+              )}
+              {verifying ? "Verifying…" : score ? "Re-run verification" : "Run verification"}
+            </Button>
+          </div>
+        </div>
+
+        {verifying && <VerifyingStrip />}
+        {verifyError && !verifying && (
+          <div className="flex items-start gap-2 border-t border-red-200 bg-red-50 px-6 py-3 text-sm text-red-800">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+            <span>
+              <strong className="font-semibold">Verification failed.</strong> {verifyError}
+            </span>
+          </div>
+        )}
+      </Card>
+
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
         <div className="min-w-0 space-y-5">
           {score ? (
             <>
@@ -155,8 +218,19 @@ export default function BidDetail({ bidId }: { bidId: string }) {
             </>
           ) : (
             <Card>
-              <CardBody className="text-sm text-slate-600">
-                This bid hasn't been verified yet. Run verification to check it against the government portals and score it.
+              <CardBody className="flex flex-col items-center py-10 text-center">
+                <span className="flex h-12 w-12 items-center justify-center rounded-full bg-brand-50 text-brand-700 ring-1 ring-inset ring-brand-100">
+                  <PlayCircle className="h-6 w-6" aria-hidden />
+                </span>
+                <h2 className="mt-4 text-base font-semibold text-slate-900">Not verified yet</h2>
+                <p className="mt-1 max-w-md text-sm text-slate-500">
+                  Run verification to check this bid against the tender's eligibility rules, the uploaded documents and the
+                  government registries, and get a compliance score.
+                </p>
+                <Button className="mt-5" onClick={runVerification} disabled={verifying}>
+                  {verifying ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <PlayCircle className="h-4 w-4" aria-hidden />}
+                  Run verification
+                </Button>
               </CardBody>
             </Card>
           )}
@@ -174,13 +248,32 @@ export default function BidDetail({ bidId }: { bidId: string }) {
   );
 }
 
-function BackLink({ tenderId }: { tenderId: string | null }) {
+// Real elapsed time rather than fake stage-by-stage progress: the API runs the pipeline in one
+// request and reports nothing until it finishes.
+function VerifyingStrip() {
+  const [seconds, setSeconds] = useState(0);
+  useEffect(() => {
+    const started = Date.now();
+    const timer = window.setInterval(() => setSeconds(Math.floor((Date.now() - started) / 1000)), 500);
+    return () => window.clearInterval(timer);
+  }, []);
   return (
-    <a
-      href={tenderId ? tenderHref(tenderId) : "#/"}
-      className="inline-flex items-center gap-1 text-sm text-slate-600 hover:text-slate-900"
-    >
-      <ArrowLeft className="h-4 w-4" aria-hidden /> {tenderId ? "Back to tender" : "All tenders"}
-    </a>
+    <div className="border-t border-brand-100 bg-brand-50/70 px-6 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+        <span className="flex items-center gap-2 font-medium text-brand-900">
+          <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+          Running the compliance pipeline — registry checks, document extraction, rule engine, scoring and AI review
+        </span>
+        <span className="tabular-nums text-brand-700">{seconds}s</span>
+      </div>
+      <div className="mt-2 h-1 overflow-hidden rounded-full bg-brand-100">
+        <div className="h-full w-1/3 animate-verify-slide rounded-full bg-brand-500" />
+      </div>
+      {seconds >= 15 && (
+        <p className="mt-2 text-xs text-brand-800">
+          Taking a little longer — the first run after the server wakes up also loads the AI models.
+        </p>
+      )}
+    </div>
   );
 }
