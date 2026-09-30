@@ -15,6 +15,12 @@
 # dir every run would mean a never-before-linked path every time, so `railway up` would have
 # nothing to attach to.
 #
+# Also handles a real gotcha, confirmed against a live deploy: Railway containers have no
+# outbound IPv6 by default, but Supabase's direct db.<ref>.supabase.co host is IPv6-only, so
+# without the fix below the container crash-loops on every DB connection with "Network is
+# unreachable". This script enables IPv6 egress via Railway's GraphQL API on every run (there's
+# no plain CLI flag for it) -- no action needed on your part.
+#
 # Prerequisites (one-time):
 #   1. Install the CLI: npm install -g @railway/cli   (or: curl -fsSL https://railway.app/install.sh | sh)
 #   2. railway login
@@ -31,6 +37,10 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_DIR="$REPO_ROOT/deploy/railway/_build"
+# The deployed Vercel frontend's origin -- app/main.py's CORS middleware only allows
+# http://localhost:5173 by default, so without this the browser blocks every API call from the
+# real deployed site. Override with FRONTEND_ORIGIN=... if your Vercel URL differs.
+FRONTEND_ORIGIN="${FRONTEND_ORIGIN:-https://bid-auth.vercel.app}"
 
 if ! command -v railway >/dev/null 2>&1; then
   echo "railway CLI not found. Install it: npm install -g @railway/cli" >&2
@@ -67,21 +77,16 @@ cp -r "$REPO_ROOT/ml/extraction" "$REPO_ROOT/ml/risk" "$REPO_ROOT/ml/recommendat
 [ -f "$REPO_ROOT/ml/__init__.py" ] && cp "$REPO_ROOT/ml/__init__.py" "$BUILD_DIR/ml/__init__.py"
 find "$BUILD_DIR/app" "$BUILD_DIR/ml" -name "__pycache__" -type d -prune -exec rm -rf {} + 2>/dev/null || true
 
-# Model weights: bake trained_models.zip straight into the image if this machine has it, so the
-# service never needs Hugging Face reachable at startup. Falls back to the HF download path if
-# the zip isn't here.
+# Model weights: unlike deploy_cloudrun.sh, this deliberately does NOT bake trained_models.zip
+# into the upload. Railway's `railway up` goes through an upload gateway capped at 512MiB --
+# the zip alone (~510MB) plus app/ml code pushes the total past that limit and the upload is
+# rejected outright (confirmed: a real attempt failed with "413 Payload Too Large" at 536705014
+# bytes, right at the 512MiB=536870912 boundary). So on Railway the service always downloads the
+# three models from Hugging Face on first startup -- ml_weights/ here stays an empty placeholder
+# (the Dockerfile COPYs it unconditionally) and ML_EXTRACTION_MODEL etc are left unset so
+# app/config.py's HF-repo-id defaults apply.
+rm -rf "$BUILD_DIR/ml_weights"
 mkdir -p "$BUILD_DIR/ml_weights"
-BAKED_WEIGHTS=false
-if [ -f "$REPO_ROOT/trained_models.zip" ]; then
-  echo "Found trained_models.zip -- baking model weights into the image (no Hugging Face download at startup) ..."
-  UNZIP_TMP="$(mktemp -d)"
-  unzip -q "$REPO_ROOT/trained_models.zip" -d "$UNZIP_TMP"
-  cp -r "$UNZIP_TMP/models/"* "$BUILD_DIR/ml_weights/"
-  rm -rf "$UNZIP_TMP"
-  BAKED_WEIGHTS=true
-else
-  echo "trained_models.zip not found at repo root -- models will be downloaded from Hugging Face on first startup instead."
-fi
 
 echo "Setting environment variables ..."
 (
@@ -89,12 +94,29 @@ echo "Setting environment variables ..."
   railway variable set "DATABASE_URL=$DATABASE_URL"
   railway variable set "ML_MODELS_ENABLED=true"
   railway variable set "SYNC_PIPELINE=true"
-  if [ "$BAKED_WEIGHTS" = true ]; then
-    railway variable set "ML_EXTRACTION_MODEL=/app/ml_weights/extraction"
-    railway variable set "ML_RISK_MODEL=/app/ml_weights/risk"
-    railway variable set "ML_RECOMMENDATION_MODEL=/app/ml_weights/recommendation"
-  fi
+  railway variable set "CORS_ORIGINS=$FRONTEND_ORIGIN"
+  # Clear these in case an earlier run of this script set them before this limitation was found --
+  # harmless no-ops if they were never set.
+  railway variable delete "ML_EXTRACTION_MODEL" 2>/dev/null || true
+  railway variable delete "ML_RISK_MODEL" 2>/dev/null || true
+  railway variable delete "ML_RECOMMENDATION_MODEL" 2>/dev/null || true
 )
+
+# Railway containers have no outbound IPv6 by default, but Supabase's direct db.<ref>.supabase.co
+# host is IPv6-only -- without this, alembic's migration step (and every DB connection after it)
+# fails with "OSError: [Errno 101] Network is unreachable" and the deploy crash-loops. There's no
+# plain CLI flag for this, so it goes through Railway's GraphQL API directly. Confirmed this is
+# read on each new deploy (not just once at container boot), so setting it before every `railway
+# up` is redundant-but-harmless rather than strictly one-time.
+SERVICE_ID="$(cd "$BUILD_DIR" && railway service list --json 2>/dev/null | grep -m1 '"id"' | sed -E 's/.*"id": *"([^"]+)".*/\1/')"
+if [ -n "$SERVICE_ID" ]; then
+  (cd "$BUILD_DIR" && railway api \
+    'mutation($serviceId: String!, $input: ServiceInstanceUpdateInput!) { serviceInstanceUpdate(serviceId: $serviceId, input: $input) }' \
+    --var "serviceId=$SERVICE_ID" \
+    --var 'input={"ipv6EgressEnabled": true}' >/dev/null 2>&1) \
+    && echo "IPv6 egress enabled (needed for Supabase's direct connection host)." \
+    || echo "Warning: could not confirm IPv6 egress setting -- if the deploy crash-loops on DB connect, this is why." >&2
+fi
 
 echo "Deploying to Railway ..."
 (cd "$BUILD_DIR" && railway up --detach)

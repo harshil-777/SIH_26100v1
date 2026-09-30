@@ -9,7 +9,7 @@ from app.routers import audit, bids, dashboard, tenders
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="GeM Bid Compliance Platform", version="0.1.0")
+app = FastAPI(title="Bid-Auth", version="0.1.0")
 
 
 # Registered before CORSMiddleware so it sits *inside* it: an unhandled error then becomes a

@@ -1,6 +1,6 @@
 # Hosting guide
 
-Everything you need to put the GeM Bid Compliance Platform online.
+Everything you need to put Bid-Auth (the GeM Bid Compliance Platform) online.
 
 ## What you're deploying
 
@@ -24,8 +24,9 @@ There are two backend deploy scripts, covered as two options below. Use whicheve
   genuinely $0/month at this traffic level indefinitely, no recurring charge expected. Good if
   you're OK giving a card but want to actually not pay anything.
 
-Both scripts bake the model weights straight into the deployed image (see "Model weights"
-below) — no separate ML hosting service either way.
+Neither backend needs a separate ML hosting service — see "Model weights" below for exactly how
+each one gets the weights (they differ: Cloud Run can bake them in, Railway always downloads
+from Hugging Face because of an upload size limit).
 
 ## 0. Get the code
 
@@ -40,18 +41,22 @@ You'll also need:
 - `trained_models.zip` (~510 MB) — optional but recommended, see below. Too big for git/GitHub
   (100 MB limit), so it has to reach you separately (Drive link, USB, etc).
 
-## 1. Model weights — two options
+## 1. Model weights
 
-**Option A (simplest): do nothing.** The deploy script downloads the three trained models from
-Hugging Face automatically the first time the backend starts. No extra steps.
+**On Railway: always downloads from Hugging Face.** `trained_models.zip` (~510 MB) can't be
+baked in here — confirmed against a real deploy: Railway's `railway up` upload gateway hard-caps
+at 512MiB, and the zip alone is already right at that limit before adding any code. So on
+Railway the service just downloads the three models from Hugging Face the first time it starts;
+`deploy_railway.sh` doesn't look for the zip at all.
 
-**Option B (recommended): use `trained_models.zip`.** Put it at the **repo root**, named exactly
-`trained_models.zip`, right next to this file. Either deploy script (Railway or Cloud Run) will
-notice it automatically and bake the weights straight into the deployed image — no separate file
-host, no Hugging Face account needed, no dependency on Hugging Face being reachable when the
-service starts. It just makes the image ~500 MB bigger and the first deploy a bit slower.
+**On Cloud Run: your choice.** Put `trained_models.zip` at the **repo root**, named exactly
+that, and `deploy_cloudrun.sh` notices it automatically and bakes the weights straight into the
+image — no separate file host, no dependency on Hugging Face being reachable at startup. Leave
+it out and Cloud Run downloads from Hugging Face too, same as Railway. `gcloud`'s upload path
+doesn't share Railway's 512MiB limit, which is why this only works on Cloud Run.
 
-Either way works identically once deployed — this only affects where the weights come from.
+Either way works identically once the service is actually running — this only affects where the
+weights come from and how long the first deploy/first request takes.
 
 ## 2A. Deploy the backend — Railway (no card to start)
 
@@ -72,14 +77,17 @@ cd ../../..                       # back to the repo root
 
 This assembles the runtime files into `deploy/railway/_build/` (that folder stays linked to your
 Railway project across runs — re-running the script always redeploys the same service) and runs
-`railway up`. It prints which model-weights path it took, same messages as described above.
+`railway up`. It also enables IPv6 egress on the service automatically — Railway containers have
+none by default, but Supabase's direct connection host is IPv6-only, so without this the deploy
+crash-loops on every database connection. Confirmed against a real deploy; nothing you need to do.
 
 **First time only**, give the service a public URL:
 ```bash
 cd deploy/railway/_build && railway domain
 ```
-This prints your live URL, e.g. `https://gem-compliance-api.up.railway.app` — that's what you'll
-use as `VITE_API_BASE_URL` in step 3.
+This prints your live URL — ours came out as `https://bid-auth-production.up.railway.app`, since
+`railway init`'s project name becomes the subdomain. That's what you'll use as
+`VITE_API_BASE_URL` in step 3.
 
 **Redeploying later:** just run `./deploy/deploy_railway.sh` again.
 
@@ -107,7 +115,7 @@ container server-side via Cloud Build. Takes a few minutes the first time (insta
 transformers, longer still if baking in `trained_models.zip`). When it finishes, it prints the
 service URL:
 ```
-https://gem-compliance-api-<random>.<region>.run.app
+https://bid-auth-<random>.<region>.run.app
 ```
 That's what you'll use as `VITE_API_BASE_URL` in step 3.
 
@@ -121,9 +129,11 @@ curl https://<your-url>/tenders     # real tender data
 curl -X POST https://<your-url>/bids/BID-B001-T2026-0001/verify
 ```
 
-The verify call should come back within a few seconds with `"status":"success"` and a full
-result inline — no polling needed, the pipeline runs synchronously by design (see "Why no
-background worker" below).
+The verify call should come back with `"status":"success"` and a full result inline — no
+polling needed, the pipeline runs synchronously by design (see "Why no background worker"
+below). On Railway specifically, the very first verify call after a deploy can take up to a
+minute or so (downloading the models from Hugging Face); after that they stay loaded in memory
+and it's a few seconds per call, same as Cloud Run.
 
 ## 3. Deploy the frontend to Vercel
 
@@ -175,8 +185,8 @@ exchange for one simple always-correct backend service on either platform.
 
 **Cloud Run**: Cloud Build's build log (linked from the `gcloud run deploy` output, or in the
 GCP Console under Cloud Build → History) is the first place to check if the deploy itself fails.
-At runtime, `gcloud run services logs read gem-compliance-api --region YOUR_REGION` shows the
-container's logs.
+At runtime, `gcloud run services logs read bid-auth --region YOUR_REGION` shows the container's
+logs.
 
 There's also a third option for the backend, a Hugging Face Space with the Docker SDK
 (`deploy/space/`, covered in `deploy/DEPLOY.md`) — it bundles Celery + Redis in one container and

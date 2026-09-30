@@ -13,7 +13,7 @@ export default function App() {
         <div className="mx-auto flex h-14 max-w-7xl items-center gap-2 px-4 sm:px-6">
           <a href="#/" className="flex items-center gap-2 font-semibold text-slate-900">
             <ShieldCheck className="h-5 w-5 text-emerald-700" aria-hidden />
-            GeM Bid Compliance
+            Bid-Auth
           </a>
           <span className="ml-2 hidden text-sm text-slate-500 sm:inline">Procurement officer dashboard</span>
         </div>

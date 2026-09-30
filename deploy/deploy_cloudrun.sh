@@ -20,10 +20,14 @@
 # which would land in your shell history.
 set -euo pipefail
 
-SERVICE_NAME="${1:-gem-compliance-api}"
+SERVICE_NAME="${1:-bid-auth}"
 REGION="${2:-us-central1}"
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# The deployed Vercel frontend's origin -- app/main.py's CORS middleware only allows
+# http://localhost:5173 by default, so without this the browser blocks every API call from the
+# real deployed site. Override with FRONTEND_ORIGIN=... if your Vercel URL differs.
+FRONTEND_ORIGIN="${FRONTEND_ORIGIN:-https://bid-auth.vercel.app}"
 
 if ! command -v gcloud >/dev/null 2>&1; then
   echo "gcloud CLI not found. Install it: https://cloud.google.com/sdk/docs/install" >&2
@@ -69,7 +73,7 @@ else
   echo "trained_models.zip not found at repo root -- models will be downloaded from Hugging Face on first startup instead."
 fi
 
-ENV_VARS="DATABASE_URL=$DATABASE_URL"
+ENV_VARS="DATABASE_URL=$DATABASE_URL,CORS_ORIGINS=$FRONTEND_ORIGIN"
 if [ "$BAKED_WEIGHTS" = true ]; then
   ENV_VARS="$ENV_VARS,ML_EXTRACTION_MODEL=/app/ml_weights/extraction,ML_RISK_MODEL=/app/ml_weights/risk,ML_RECOMMENDATION_MODEL=/app/ml_weights/recommendation"
 fi

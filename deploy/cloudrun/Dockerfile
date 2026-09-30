@@ -31,7 +31,7 @@ COPY alembic.ini .
 COPY app ./app
 COPY ml ./ml
 COPY ml_weights ./ml_weights
-COPY "WORKING DOCUMENTS" "./WORKING DOCUMENTS"
+COPY ["WORKING DOCUMENTS", "./WORKING DOCUMENTS"]
 RUN mkdir -p /app/storage
 
 ENV ML_MODELS_ENABLED=true \
