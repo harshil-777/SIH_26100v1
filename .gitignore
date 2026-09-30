@@ -27,3 +27,8 @@ FRIEND_PC_SETUP.md
 ml/data/
 ml/models/
 trained_models.zip
+
+# Persistent Railway CLI build/link directory -- deploy/deploy_railway.sh repopulates its
+# contents on every run, but the Railway project link itself (created once via `railway init`)
+# needs to stay put across runs, so this directory is never deleted, only gitignored.
+deploy/railway/_build/

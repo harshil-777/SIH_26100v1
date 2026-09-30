@@ -1,26 +1,42 @@
-# Deploying for free
+# Deploying
 
-> **Correction**: this originally recommended a Hugging Face Space (Docker SDK) for the
-> backend. That was wrong — creating a Docker or Gradio Space requires HF PRO ($9/mo); only
-> Static Spaces and the CPU-Basic *hardware itself* (once you have access) are free. See
-> `hosting_guide.md` for the full correction and current recommendation (Google Cloud Run).
-> The `deploy/space/` files below still work correctly if you do have PRO.
+`hosting_guide.md` at the repo root is the full step-by-step walkthrough written for someone
+deploying this cold. This file is the shorter reference on *why* each option is built the way it
+is.
 
-## The two backend options
+## The three backend options
 
-| | Free without a card | Needs a card on file | Notes |
+| | Card needed | Cost | Notes |
 |---|---|---|---|
-| **Google Cloud Run** (recommended) | No | Yes (won't charge at low traffic) | `deploy/deploy_cloudrun.sh` — no Docker needed locally, builds server-side |
-| **Hugging Face Space (Docker)** | No — needs HF PRO | No | `deploy/push_to_space.sh` — simpler (Celery+Redis bundled in one container), but gated behind a subscription |
+| **Railway** (recommended to start) | No | $5 trial credit, then ~$5/month flat | `deploy/deploy_railway.sh` — bills by actual usage, not a fixed RAM cap, so it comfortably fits all 3 ML models loaded at once |
+| **Google Cloud Run** | Yes (for verification) | Free at this traffic level indefinitely | `deploy/deploy_cloudrun.sh` — no Docker needed locally, builds server-side |
+| **Hugging Face Space (Docker)** | No — needs HF PRO | $9/month subscription | `deploy/push_to_space.sh` — simplest code-wise (Celery+Redis bundled in one container), but gated behind a subscription |
 
-Frontend is Vercel either way (free, no card). Database is Supabase either way (free, already
-set up).
+Frontend is Vercel in all three cases (free, no card). Database is Supabase in all three cases
+(free, already set up).
+
+Render and Koyeb's free tiers were considered and ruled out: both cap free instances at ~512MB
+RAM, and the three loaded models (DistilBERT + flan-t5-small + LightGBM) need roughly 1-1.5GB
+together once torch's own overhead is counted — that would OOM on either platform.
 
 ---
 
-## Option A: Google Cloud Run (no HF PRO needed)
+## Option A: Railway (no card, usage-based billing)
 
-Full walkthrough: **`hosting_guide.md`** at the repo root. Short version:
+```bash
+railway login
+mkdir -p deploy/railway/_build && cd deploy/railway/_build && railway init && cd ../../..
+./deploy/deploy_railway.sh
+```
+
+The Railway CLI links a *directory's path* to a project (not just an account-level config), so
+the script keeps one persistent build directory (`deploy/railway/_build/`, gitignored) instead of
+a fresh temp dir per run — a fresh path every time would mean nothing to attach the deploy to.
+
+No Celery/Redis here either (see Option B's rationale below — same reasoning applies: keeping one
+simple always-on service is worth more than the marginal benefit of a background worker).
+
+## Option B: Google Cloud Run (needs a card, genuinely free)
 
 ```bash
 gcloud auth login
@@ -35,13 +51,15 @@ No Celery/Redis in this path — `/verify` runs the pipeline inline within the r
 throttles CPU between requests by default and a background worker would starve waiting on a
 queue that never gets CPU to check itself.
 
-If `trained_models.zip` (see `hosting_guide.md`) is present at the repo root when you run
-`deploy_cloudrun.sh`, it bakes the model weights straight into the image so the service never
-needs Hugging Face reachable at startup. If it's not there, the service downloads the weights
-from Hugging Face on first startup instead — both paths work, the script just picks whichever
-one it can.
+## Both A and B: model weights
 
-## Option B: Hugging Face Space (needs PRO, $9/mo)
+If `trained_models.zip` (see `hosting_guide.md`) is present at the repo root when you run either
+deploy script, it bakes the model weights straight into the image so the service never needs
+Hugging Face reachable at startup. If it's not there, the service downloads the weights from
+Hugging Face on first startup instead — both paths work, the script just picks whichever one it
+can.
+
+## Option C: Hugging Face Space (needs PRO, $9/mo)
 
 **Create the Space:**
 1. https://huggingface.co/new-space
@@ -57,15 +75,15 @@ token (Settings → Access Tokens). Pushes only the runtime files (`app/`, `alem
 `requirements.txt`, seed data, the Dockerfile) into the Space's own separate git repo as a
 fresh single commit each time — not your GitHub history.
 
-Unlike Cloud Run, this bundles Redis + a real Celery worker in the same always-on container
-(HF Spaces doesn't throttle CPU the way Cloud Run does), so `/verify` keeps its original
-queue-and-poll behaviour with no code differences from local dev.
+Unlike Railway/Cloud Run, this bundles Redis + a real Celery worker in the same always-on
+container (HF Spaces doesn't throttle CPU the way Cloud Run does), so `/verify` keeps its
+original queue-and-poll behaviour with no code differences from local dev.
 
 Live at `https://YOUR_USERNAME-<space-name>.hf.space` once the build finishes.
 
 ---
 
-## Frontend — Vercel (either option)
+## Frontend — Vercel (all options)
 
 1. https://vercel.com/new → import the GitHub repo.
 2. **Root Directory**: `web`.
@@ -80,16 +98,17 @@ hash-based routing (`#/tenders/...`), which never touches the server.
 Open the Vercel URL: tender list, live from Supabase via your backend. Click through to a
 bidder to see the full detail page and try "Run verification".
 
-## Known caveats (both options)
+## Known caveats (all options)
 
-- **Uploaded documents don't persist** across restarts/redeploys — both platforms give the
+- **Uploaded documents don't persist** across restarts/redeploys — all platforms give the
   container ephemeral local disk. Fine for a demo; fixing it means swapping
   `app/services/object_store.py`'s `LocalObjectStore` for an S3-compatible store.
-- **Cold starts**: both platforms scale to zero when idle and take longer on the first request
-  after a quiet period (reloading the models).
+- **Cold starts / idle spin-down**: Railway and Cloud Run can go idle and take longer on the
+  first request after a quiet period (reloading the models).
 
 ## Redeploying later
 
+- Railway: `./deploy/deploy_railway.sh` again.
 - Cloud Run: `./deploy/deploy_cloudrun.sh` again.
 - HF Space: `./deploy/push_to_space.sh <space-url>` again.
 - Frontend: push to GitHub — Vercel redeploys automatically if connected via the dashboard.
