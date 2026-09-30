@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config import get_settings
-from app.routers import audit, bids, dashboard, tenders
+from app.routers import audit, bids, dashboard, marks, tenders
 from app.services import ml_models
 
 logger = logging.getLogger(__name__)
@@ -51,6 +51,7 @@ app.include_router(dashboard.router)
 app.include_router(tenders.router)
 app.include_router(bids.router)
 app.include_router(audit.router)
+app.include_router(marks.router)
 
 
 @app.get("/health")

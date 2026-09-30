@@ -1,34 +1,32 @@
 import {
   ArrowRight,
-  CalendarClock,
+  Bookmark,
   ChevronRight,
   ClipboardCheck,
   FileSearch,
-  FileStack,
   Fingerprint,
   Gavel,
   History,
   Landmark,
   ScanText,
   ShieldAlert,
+  StickyNote,
   Users,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityFeed } from "@/components/ActivityFeed";
-import { RiskBadge } from "@/components/badges";
-import { RiskBar, RiskKeyLegend } from "@/components/RiskVisuals";
+import { RiskBadge, StatusBadge } from "@/components/badges";
+import { RiskDonut, RiskLegend } from "@/components/RiskVisuals";
 import { StatCard } from "@/components/StatCard";
 import { EmptyState, ErrorState } from "@/components/States";
 import { LinkButton } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { api, toNumber, type DashboardBid, type RecentAuditEntry, type TenderListItem } from "@/lib/api";
-import { daysUntil, deadlineLabel, deadlineTone, formatInrCompact, formatScore, initials } from "@/lib/format";
+import { api, toNumber, type DashboardBid, type MarkedBid, type RecentAuditEntry } from "@/lib/api";
+import { formatRelative, formatScore, initials } from "@/lib/format";
 import { RISK_KEYS, riskRank, scoreColor, type RiskKey } from "@/lib/risk";
-import { auditHref, bidHref, tenderHref, tendersHref } from "@/lib/router";
+import { auditHref, bidHref, markedHref, tendersHref } from "@/lib/router";
 import { cn } from "@/lib/utils";
-
-type Data = { tenders: TenderListItem[]; bids: DashboardBid[] };
 
 const AWAITING = new Set(["submitted", "under_review"]);
 
@@ -40,39 +38,35 @@ const PILLARS = [
 ];
 
 export default function Overview() {
-  const [data, setData] = useState<Data | null>(null);
+  const [bids, setBids] = useState<DashboardBid[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [marks, setMarks] = useState<MarkedBid[] | null>(null);
   const [activity, setActivity] = useState<RecentAuditEntry[] | null>(null);
 
   const load = useCallback(() => {
     setError(null);
-    Promise.all([api.listTenders(), api.listBids()]).then(
-      ([tenders, bids]) => setData({ tenders, bids }),
-      (cause: Error) => setError(cause.message),
-    );
-    // Separate so a failure here only empties the feed rather than the whole page.
-    api.recentActivity(5).then(setActivity, () => setActivity([]));
+    api.listBids().then(setBids, (cause: Error) => setError(cause.message));
+    // Separate so a failure in either only empties its own card rather than the whole page.
+    api.listMarks().then(setMarks, () => setMarks([]));
+    api.recentActivity(60).then(setActivity, () => setActivity([]));
   }, []);
 
   useEffect(load, [load]);
 
   const stats = useMemo(() => {
-    if (!data) return null;
-    const open = data.tenders.filter((t) => daysUntil(t.submission_deadline) >= 0);
-    const verified = data.bids.filter((b) => b.risk_level !== null);
+    if (!bids) return null;
+    const verified = bids.filter((b) => b.risk_level !== null);
     const counts = Object.fromEntries(RISK_KEYS.map((key) => [key, 0])) as Record<RiskKey, number>;
-    data.bids.forEach((b) => counts[b.risk_level ?? "unverified"]++);
+    bids.forEach((b) => counts[b.risk_level ?? "unverified"]++);
     const scores = verified.map((b) => toNumber(b.overall_score) ?? 0);
     return {
-      open,
-      openValue: open.reduce((sum, t) => sum + (toNumber(t.estimated_value_inr) ?? 0), 0),
       verified: verified.length,
-      awaiting: data.bids.filter((b) => AWAITING.has(b.status)),
+      awaiting: bids.filter((b) => AWAITING.has(b.status)),
       flagged: counts["Non-Compliant"] + counts.High,
       counts,
       averageScore: scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : null,
     };
-  }, [data]);
+  }, [bids]);
 
   const queue = useMemo(
     () =>
@@ -83,10 +77,12 @@ export default function Overview() {
     [stats],
   );
 
-  const closingSoon = useMemo(
-    () => (stats?.open ?? []).slice().sort((a, b) => a.submission_deadline.localeCompare(b.submission_deadline)).slice(0, 5),
-    [stats],
-  );
+  // One row per bid: its latest audit event, rather than a stream of events.
+  const latestPerBid = useMemo(() => {
+    if (!activity) return null;
+    const seen = new Set<string>();
+    return activity.filter((entry) => entry.bid_id && !seen.has(entry.bid_id) && seen.add(entry.bid_id)).slice(0, 5);
+  }, [activity]);
 
   return (
     <div className="page-enter space-y-6">
@@ -98,48 +94,34 @@ export default function Overview() {
         <>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <StatCard
-              label="Open tenders"
-              icon={FileStack}
-              loading={!stats}
-              value={stats?.open.length}
-              hint={stats && `${formatInrCompact(stats.openValue)} total estimated value`}
-              href={tendersHref}
-            />
-            <StatCard
               label="Bids received"
               icon={Users}
               tone="slate"
               loading={!stats}
-              value={data?.bids.length}
+              value={bids?.length}
               hint={stats && `${stats.verified} verified · avg score ${stats.averageScore === null ? "—" : formatScore(Math.round(stats.averageScore * 10) / 10)}`}
             />
+            <StatCard label="Awaiting decision" icon={ClipboardCheck} tone="amber" loading={!stats} value={stats?.awaiting.length} hint="Submitted or under review" />
+            <StatCard label="Flagged bids" icon={ShieldAlert} tone="red" loading={!stats} value={stats?.flagged} hint="High risk or non-compliant" />
             <StatCard
-              label="Awaiting decision"
-              icon={ClipboardCheck}
-              tone="amber"
-              loading={!stats}
-              value={stats?.awaiting.length}
-              hint="Submitted or under review"
-            />
-            <StatCard
-              label="Flagged bids"
-              icon={ShieldAlert}
-              tone="red"
-              loading={!stats}
-              value={stats?.flagged}
-              hint="High risk or non-compliant"
+              label="Marked for later"
+              icon={Bookmark}
+              loading={marks === null}
+              value={marks?.length}
+              hint="Bids you flagged to revisit"
+              href={markedHref}
             />
           </div>
 
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-3 lg:items-start">
             <Card className="lg:col-span-2">
               <CardHeader
                 icon={<ClipboardCheck className="h-4 w-4" />}
                 title="Review queue"
-                description="Bids awaiting an officer decision across all tenders — highest risk first."
+                description="Bids awaiting an officer decision — highest risk first."
               />
               {!stats ? (
-                <ListSkeleton rows={5} />
+                <ListSkeleton rows={6} />
               ) : queue.length === 0 ? (
                 <EmptyState icon={ClipboardCheck} title="All caught up">
                   Every bid has an officer decision on record.
@@ -154,39 +136,41 @@ export default function Overview() {
             </Card>
 
             <Card>
-              <CardHeader
-                icon={<ShieldAlert className="h-4 w-4" />}
-                title="Risk by tender"
-                description="How each tender's bids split across risk levels — most flagged first."
-              />
+              <CardHeader icon={<ShieldAlert className="h-4 w-4" />} title="Bid risk distribution" description="Latest compliance verdict for every bid." />
               <div className="px-5 py-5">
-                {!data ? (
-                  <div className="space-y-5">
-                    {Array.from({ length: 5 }, (_, i) => (
-                      <Skeleton key={i} className="h-9 w-full" />
-                    ))}
+                {!stats ? (
+                  <div className="flex flex-col items-center gap-4">
+                    <Skeleton className="h-44 w-44 rounded-full" />
+                    <Skeleton className="h-28 w-full" />
                   </div>
                 ) : (
-                  <TenderRiskList tenders={data.tenders} />
+                  <>
+                    <RiskDonut counts={stats.counts} centerLabel="bids" />
+                    <div className="mt-5">
+                      <RiskLegend counts={stats.counts} />
+                    </div>
+                  </>
                 )}
               </div>
             </Card>
 
             <Card className="lg:col-span-2">
               <CardHeader
-                icon={<CalendarClock className="h-4 w-4" />}
-                title="Closing soon"
-                description="Open tenders by submission deadline."
-                action={<ViewAll href={tendersHref} label="All tenders" />}
+                icon={<Bookmark className="h-4 w-4" />}
+                title="Marked for later"
+                description="Bids you flagged from a tender's participant list."
+                action={<ViewAll href={markedHref} label="All marked" />}
               />
-              {!stats ? (
-                <ListSkeleton rows={4} />
-              ) : closingSoon.length === 0 ? (
-                <EmptyState icon={CalendarClock} title="No open tenders" />
+              {marks === null ? (
+                <ListSkeleton rows={3} />
+              ) : marks.length === 0 ? (
+                <EmptyState icon={Bookmark} title="Nothing marked yet">
+                  Open a tender and use the bookmark icon on a bidder's row.
+                </EmptyState>
               ) : (
                 <ul className="divide-y divide-slate-100">
-                  {closingSoon.map((tender) => (
-                    <ClosingRow key={tender.tender_id} tender={tender} />
+                  {marks.slice(0, 5).map((mark) => (
+                    <MarkedRow key={mark.bid_id} mark={mark} />
                   ))}
                 </ul>
               )}
@@ -195,16 +179,17 @@ export default function Overview() {
             <Card>
               <CardHeader
                 icon={<History className="h-4 w-4" />}
-                title="Recent activity"
+                title="Latest bid updates"
+                description="Most recent audit event for each bid."
                 action={<ViewAll href={auditHref} label="Audit trail" />}
               />
               <div className="px-5 py-5">
-                {activity === null ? (
+                {latestPerBid === null ? (
                   <ListSkeleton rows={4} bare />
-                ) : activity.length === 0 ? (
+                ) : latestPerBid.length === 0 ? (
                   <EmptyState icon={FileSearch} title="No activity yet" />
                 ) : (
-                  <ActivityFeed entries={activity} dense />
+                  <ActivityFeed entries={latestPerBid} dense />
                 )}
               </div>
             </Card>
@@ -263,35 +248,20 @@ function Hero() {
   );
 }
 
-function TenderRiskList({ tenders }: { tenders: TenderListItem[] }) {
-  const flaggedShare = (t: TenderListItem) =>
-    t.participant_count ? (t.risk_counts["Non-Compliant"] + t.risk_counts.High) / t.participant_count : 0;
-  const sorted = tenders.slice().sort((a, b) => flaggedShare(b) - flaggedShare(a));
+function ScoreMeter({ score }: { score: number | null }) {
+  if (score === null) return <span className="text-xs text-slate-400">Not scored</span>;
   return (
-    <>
-      <RiskKeyLegend />
-      <ul className="mt-4 space-y-4">
-        {sorted.map((tender) => (
-          <li key={tender.tender_id}>
-            <a href={tenderHref(tender.tender_id)} className="group block">
-              <div className="flex items-baseline justify-between gap-3 text-sm">
-                <span className="truncate font-medium text-slate-800 group-hover:text-brand-700">{tender.title}</span>
-                <span className="shrink-0 text-xs tabular-nums text-slate-500">{tender.participant_count} bids</span>
-              </div>
-              <RiskBar counts={tender.risk_counts} className="mt-1.5 h-2.5" />
-              <div className="mt-1 text-xs text-slate-500">
-                {Math.round(flaggedShare(tender) * 100)}% flagged · {tender.risk_counts.Low} low risk
-              </div>
-            </a>
-          </li>
-        ))}
-      </ul>
-    </>
+    <span className="flex items-center gap-2">
+      <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100">
+        <span className={cn("block h-full rounded-full", scoreColor(score))} style={{ width: `${Math.max(score, 3)}%` }} />
+      </span>
+      <span className="w-10 text-right text-sm font-semibold tabular-nums text-slate-900">{formatScore(Math.round(score))}</span>
+    </span>
   );
 }
 
+// Bid first: bidder and bid ID lead; the tender is only a small reference tag.
 function QueueRow({ bid }: { bid: DashboardBid }) {
-  const score = toNumber(bid.overall_score);
   return (
     <li>
       <a href={bidHref(bid.bid_id)} className="group flex items-center gap-4 px-5 py-3.5 transition hover:bg-slate-50">
@@ -300,22 +270,18 @@ function QueueRow({ bid }: { bid: DashboardBid }) {
         </span>
         <span className="min-w-0 flex-1">
           <span className="block truncate text-sm font-medium text-slate-900">{bid.bidder_name}</span>
-          <span className="block truncate text-[13px] text-slate-500">{bid.tender_title}</span>
-          <span className="mt-1.5 block sm:hidden">
+          <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
+            <span className="font-mono">{bid.bid_id}</span>
+            <span className="rounded bg-slate-100 px-1.5 py-px font-mono text-[11px] text-slate-500" title={bid.tender_title}>
+              {bid.tender_id}
+            </span>
+          </span>
+          <span className="mt-1.5 flex gap-1.5 sm:hidden">
             <RiskBadge risk={bid.risk_level} />
           </span>
         </span>
         <span className="hidden w-32 sm:block">
-          {score === null ? (
-            <span className="text-xs text-slate-400">Not scored</span>
-          ) : (
-            <span className="flex items-center gap-2">
-              <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100">
-                <span className={cn("block h-full rounded-full", scoreColor(score))} style={{ width: `${Math.max(score, 3)}%` }} />
-              </span>
-              <span className="w-10 text-right text-sm font-semibold tabular-nums text-slate-900">{formatScore(Math.round(score))}</span>
-            </span>
-          )}
+          <ScoreMeter score={toNumber(bid.overall_score)} />
         </span>
         <span className="hidden sm:inline-flex">
           <RiskBadge risk={bid.risk_level} />
@@ -326,23 +292,33 @@ function QueueRow({ bid }: { bid: DashboardBid }) {
   );
 }
 
-function ClosingRow({ tender }: { tender: TenderListItem }) {
+function MarkedRow({ mark }: { mark: MarkedBid }) {
   return (
     <li>
-      <a href={tenderHref(tender.tender_id)} className="group grid gap-3 px-5 py-3.5 transition hover:bg-slate-50 sm:grid-cols-[minmax(0,1fr)_9rem_8rem] sm:items-center">
-        <span className="min-w-0">
-          <span className="block truncate text-sm font-medium text-slate-900">{tender.title}</span>
-          <span className="block truncate text-[13px] text-slate-500">
-            {tender.department} · {formatInrCompact(toNumber(tender.estimated_value_inr) ?? 0)}
-          </span>
+      <a href={bidHref(mark.bid_id)} className="group flex items-center gap-4 px-5 py-3.5 transition hover:bg-slate-50">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-50 text-sm font-semibold text-brand-700 ring-1 ring-inset ring-brand-100">
+          {initials(mark.bidder_name)}
         </span>
-        <span className="text-[13px]">
-          <span className={cn("block font-medium", deadlineTone(tender.submission_deadline))}>{deadlineLabel(tender.submission_deadline)}</span>
-          <span className="block text-slate-500">
-            {tender.participant_count} bidder{tender.participant_count === 1 ? "" : "s"}
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-medium text-slate-900">{mark.bidder_name}</span>
+          <span className="mt-0.5 block truncate text-xs text-slate-500">
+            <span className="font-mono">{mark.bid_id}</span> · marked {formatRelative(mark.marked_at)}
           </span>
+          {mark.note && (
+            <span className="mt-1 flex items-start gap-1 text-[13px] text-slate-600">
+              <StickyNote className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500" aria-hidden />
+              <span className="truncate">{mark.note}</span>
+            </span>
+          )}
         </span>
-        <RiskBar counts={tender.risk_counts} />
+        <span className="hidden w-32 sm:block">
+          <ScoreMeter score={toNumber(mark.overall_score)} />
+        </span>
+        <span className="hidden flex-col items-end gap-1 md:flex">
+          <RiskBadge risk={mark.risk_level} />
+          <StatusBadge status={mark.status} />
+        </span>
+        <ChevronRight className="h-4 w-4 shrink-0 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-slate-500" aria-hidden />
       </a>
     </li>
   );

@@ -29,7 +29,7 @@ function describe(entry: RecentAuditEntry): { icon: LucideIcon; tone: string; ti
   return { icon: Gavel, tone: "bg-slate-100 text-slate-600 ring-slate-200", title: entry.action.replace(/_/g, " "), detail: null };
 }
 
-export function ActivityFeed({ entries, dense = false }: { entries: RecentAuditEntry[]; dense?: boolean }) {
+export function ActivityFeed({ entries, dense = false, showBid = true }: { entries: RecentAuditEntry[]; dense?: boolean; showBid?: boolean }) {
   return (
     <ol className="relative">
       {entries.map((entry, i) => {
@@ -45,7 +45,7 @@ export function ActivityFeed({ entries, dense = false }: { entries: RecentAuditE
               <div className="flex flex-wrap items-baseline justify-between gap-x-3">
                 <p className="text-sm text-slate-900">
                   <span className="font-medium">{title}</span>
-                  {entry.bidder_name && entry.bid_id && (
+                  {showBid && entry.bidder_name && entry.bid_id && (
                     <>
                       {" · "}
                       <a href={bidHref(entry.bid_id)} className="text-slate-700 hover:text-brand-700 hover:underline">
@@ -61,7 +61,7 @@ export function ActivityFeed({ entries, dense = false }: { entries: RecentAuditE
               {detail && <p className="mt-0.5 line-clamp-2 text-[13px] text-slate-500">{detail}</p>}
               <p className="mt-0.5 text-xs text-slate-400">
                 {who}
-                {entry.bid_id && <span className="font-mono"> · {entry.bid_id}</span>}
+                {showBid && entry.bid_id && <span className="font-mono"> · {entry.bid_id}</span>}
               </p>
             </div>
           </li>

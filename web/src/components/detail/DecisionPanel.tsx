@@ -4,9 +4,8 @@ import { StatusBadge } from "@/components/badges";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { api, type BidStatus, type Decision, type RiskLevel } from "@/lib/api";
+import { readOfficer, rememberOfficer } from "@/lib/officer";
 import { cn } from "@/lib/utils";
-
-const OFFICER_KEY = "gem.officer";
 
 const OPTIONS: { value: Decision; label: string; icon: typeof CheckCircle2; active: string }[] = [
   { value: "qualify", label: "Qualify", icon: CheckCircle2, active: "border-emerald-600 bg-emerald-50 text-emerald-800" },
@@ -15,22 +14,6 @@ const OPTIONS: { value: Decision; label: string; icon: typeof CheckCircle2; acti
 ];
 
 const SUBMIT_VARIANT = { qualify: "success", request_clarification: "warning", disqualify: "danger" } as const;
-
-function readOfficer(): string {
-  try {
-    return localStorage.getItem(OFFICER_KEY) ?? "";
-  } catch {
-    return "";
-  }
-}
-
-function rememberOfficer(name: string) {
-  try {
-    localStorage.setItem(OFFICER_KEY, name);
-  } catch {
-    // Storage blocked (private window etc.) -- the officer just retypes their name next time.
-  }
-}
 
 export function DecisionPanel({
   bidId,

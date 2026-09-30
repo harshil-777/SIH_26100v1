@@ -1,10 +1,11 @@
-import { ArrowDown, ArrowUp, ArrowUpDown, ChevronRight, Search, SearchX, X } from "lucide-react";
-import { useMemo, useState } from "react";
+import { ArrowDown, ArrowUp, ArrowUpDown, Bookmark, BookmarkCheck, ChevronRight, Loader2, Search, SearchX, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { RiskBadge, StatusBadge } from "@/components/badges";
 import { EmptyState } from "@/components/States";
 import { Card } from "@/components/ui/card";
-import { toNumber, type BidStatus, type DashboardBid } from "@/lib/api";
+import { api, toNumber, type BidStatus, type DashboardBid } from "@/lib/api";
 import { formatDate, formatScore, initials, STATUS_LABELS } from "@/lib/format";
+import { readOfficer } from "@/lib/officer";
 import { RISK_KEYS, RISK_STYLE, scoreColor, type RiskKey } from "@/lib/risk";
 import { bidHref, navigate } from "@/lib/router";
 import { cn } from "@/lib/utils";
@@ -22,6 +23,16 @@ export function ParticipantsTable({ bids }: { bids: DashboardBid[] }) {
   const [risk, setRisk] = useState<RiskFilter>("all");
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" }>({ key: "default", dir: "asc" });
+  const [marked, setMarked] = useState(() => new Set(bids.filter((bid) => bid.marked).map((bid) => bid.bid_id)));
+  const [markedOnly, setMarkedOnly] = useState(false);
+
+  const setMark = (bidId: string, on: boolean) =>
+    setMarked((current) => {
+      const next = new Set(current);
+      if (on) next.add(bidId);
+      else next.delete(bidId);
+      return next;
+    });
 
   const riskCounts = useMemo(() => {
     const counts = Object.fromEntries(RISK_KEYS.map((key) => [key, 0])) as Record<RiskKey, number>;
@@ -35,6 +46,7 @@ export function ParticipantsTable({ bids }: { bids: DashboardBid[] }) {
       (bid) =>
         (status === "all" || (status === "awaiting" ? AWAITING.has(bid.status) : bid.status === status)) &&
         riskMatches(risk, bid.risk_level ?? "unverified") &&
+        (!markedOnly || marked.has(bid.bid_id)) &&
         (!needle || `${bid.bid_id} ${bid.bidder_name} ${bid.tender_title} ${bid.tender_id}`.toLowerCase().includes(needle)),
     );
     const sign = sort.dir === "asc" ? 1 : -1;
@@ -47,16 +59,17 @@ export function ParticipantsTable({ bids }: { bids: DashboardBid[] }) {
             ? sign * a.bidder_name.localeCompare(b.bidder_name)
             : a.bid_id.localeCompare(b.bid_id),
     );
-  }, [bids, status, risk, query, sort]);
+  }, [bids, status, risk, query, sort, markedOnly, marked]);
 
   const toggleSort = (key: SortKey) =>
     setSort((current) => ({ key, dir: current.key === key && current.dir === "asc" ? "desc" : "asc" }));
 
-  const filtered = status !== "all" || risk !== "all" || query.trim() !== "";
+  const filtered = status !== "all" || risk !== "all" || query.trim() !== "" || markedOnly;
   const clearFilters = () => {
     setStatus("all");
     setRisk("all");
     setQuery("");
+    setMarkedOnly(false);
   };
 
   return (
@@ -111,6 +124,19 @@ export function ParticipantsTable({ bids }: { bids: DashboardBid[] }) {
               </option>
             ))}
           </select>
+          <button
+            type="button"
+            onClick={() => setMarkedOnly((on) => !on)}
+            aria-pressed={markedOnly}
+            className={cn(
+              "inline-flex h-9 items-center gap-1.5 rounded-lg border px-3 text-sm font-medium transition",
+              markedOnly ? "border-brand-400 bg-brand-50 text-brand-800" : "border-slate-300 text-slate-700 hover:bg-slate-50",
+            )}
+          >
+            <BookmarkCheck className="h-4 w-4" aria-hidden />
+            Marked only
+            <span className="tabular-nums text-slate-500">{marked.size}</span>
+          </button>
           <span className="text-[13px] text-slate-500">
             {visible.length} of {bids.length}
           </span>
@@ -128,8 +154,8 @@ export function ParticipantsTable({ bids }: { bids: DashboardBid[] }) {
         {/* Phones get cards: too many columns to fit in 390px without hiding the score. */}
         <ul className="divide-y divide-slate-100 md:hidden">
           {visible.map((bid) => (
-            <li key={bid.bid_id}>
-              <a href={bidHref(bid.bid_id)} className="flex gap-3 px-4 py-3.5 hover:bg-slate-50">
+            <li key={bid.bid_id} className="relative flex items-start">
+              <a href={bidHref(bid.bid_id)} className="flex min-w-0 flex-1 gap-3 py-3.5 pl-4 hover:bg-slate-50">
                 <Avatar name={bid.bidder_name} />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-start justify-between gap-3">
@@ -145,6 +171,9 @@ export function ParticipantsTable({ bids }: { bids: DashboardBid[] }) {
                   </div>
                 </div>
               </a>
+              <div className="px-2 pt-3">
+                <MarkButton bidId={bid.bid_id} bidder={bid.bidder_name} marked={marked.has(bid.bid_id)} onChange={(on) => setMark(bid.bid_id, on)} />
+              </div>
             </li>
           ))}
         </ul>
@@ -158,6 +187,10 @@ export function ParticipantsTable({ bids }: { bids: DashboardBid[] }) {
                 <th className="px-4 py-3 font-medium">Risk</th>
                 <th className="px-4 py-3 font-medium">Status</th>
                 <SortHeader label="Submitted" active={sort.key === "submitted"} dir={sort.dir} onClick={() => toggleSort("submitted")} />
+                <th className="w-12 px-2 py-3 text-center font-medium">
+                  <span className="sr-only">Mark for later</span>
+                  <Bookmark className="mx-auto h-3.5 w-3.5" aria-hidden />
+                </th>
                 <th className="w-10" />
               </tr>
             </thead>
@@ -193,6 +226,9 @@ export function ParticipantsTable({ bids }: { bids: DashboardBid[] }) {
                   <td className="whitespace-nowrap px-4 py-3 text-[13px] text-slate-500" title={formatDate(bid.submitted_at)}>
                     {new Date(bid.submitted_at).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
                   </td>
+                  <td className="px-2 py-3 text-center" onClick={(event) => event.stopPropagation()}>
+                    <MarkButton bidId={bid.bid_id} bidder={bid.bidder_name} marked={marked.has(bid.bid_id)} onChange={(on) => setMark(bid.bid_id, on)} />
+                  </td>
                   <td className="pr-4 text-slate-300">
                     <ChevronRight className="h-4 w-4 transition group-hover:translate-x-0.5 group-hover:text-slate-500" aria-hidden />
                   </td>
@@ -200,7 +236,7 @@ export function ParticipantsTable({ bids }: { bids: DashboardBid[] }) {
               ))}
               {visible.length === 0 && (
                 <tr>
-                  <td colSpan={6}>
+                  <td colSpan={7}>
                     <EmptyState icon={SearchX} title="No bids match these filters">
                       {filtered && (
                         <button type="button" onClick={clearFilters} className="font-medium text-brand-700 hover:underline">
@@ -220,6 +256,103 @@ export function ParticipantsTable({ bids }: { bids: DashboardBid[] }) {
           </div>
         )}
       </Card>
+    </div>
+  );
+}
+
+// Marking asks for an optional note ("why check this later?"); unmarking is one click.
+function MarkButton({ bidId, bidder, marked, onChange }: { bidId: string; bidder: string; marked: boolean; onChange: (marked: boolean) => void }) {
+  const [open, setOpen] = useState(false);
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (open) inputRef.current?.focus();
+  }, [open]);
+
+  async function unmark() {
+    setBusy(true);
+    try {
+      await api.unmarkBid(bidId);
+      onChange(false);
+    } catch {
+      // Stays marked; the unchanged icon is the feedback.
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await api.markBid(bidId, { marked_by: readOfficer() || "Procurement officer", note: note.trim() || null });
+      onChange(true);
+      setOpen(false);
+      setNote("");
+    } catch (cause) {
+      setError((cause as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="relative inline-block">
+      <button
+        type="button"
+        onClick={() => (marked ? unmark() : setOpen((o) => !o))}
+        disabled={busy}
+        aria-pressed={marked}
+        title={marked ? "Marked for later - click to unmark" : "Mark to check later"}
+        aria-label={marked ? `Unmark ${bidder}` : `Mark ${bidder} to check later`}
+        className={cn(
+          "rounded-md p-1.5 transition",
+          marked ? "text-brand-600 hover:bg-brand-50" : "text-slate-300 hover:bg-slate-100 hover:text-slate-600",
+        )}
+      >
+        {busy && !open ? (
+          <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+        ) : marked ? (
+          <BookmarkCheck className="h-4 w-4 fill-brand-100" aria-hidden />
+        ) : (
+          <Bookmark className="h-4 w-4" aria-hidden />
+        )}
+      </button>
+      {open && (
+        <form
+          onSubmit={submit}
+          onKeyDown={(event) => event.key === "Escape" && setOpen(false)}
+          className="absolute right-0 top-full z-30 mt-1 w-72 rounded-xl border border-slate-200 bg-white p-3 text-left shadow-lift animate-in fade-in-0 zoom-in-95 duration-100"
+        >
+          <div className="text-sm font-medium text-slate-900">Mark to check later</div>
+          <div className="truncate text-xs text-slate-500">{bidder}</div>
+          <input
+            ref={inputRef}
+            value={note}
+            onChange={(event) => setNote(event.target.value)}
+            placeholder="Note (optional), e.g. verify EPFO count"
+            className="mt-2.5 h-9 w-full rounded-lg border border-slate-300 px-3 text-sm placeholder:text-slate-400 focus:border-brand-400 focus:outline-none focus:ring-4 focus:ring-brand-100"
+          />
+          {error && <p className="mt-1.5 text-xs text-red-700">{error}</p>}
+          <div className="mt-3 flex justify-end gap-2">
+            <button type="button" onClick={() => setOpen(false)} className="rounded-md px-3 py-1.5 text-[13px] font-medium text-slate-600 hover:bg-slate-100">
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={busy}
+              className="inline-flex items-center gap-1.5 rounded-md bg-brand-600 px-3 py-1.5 text-[13px] font-medium text-white hover:bg-brand-700 disabled:opacity-60"
+            >
+              {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : <Bookmark className="h-3.5 w-3.5" aria-hidden />}
+              Mark bid
+            </button>
+          </div>
+        </form>
+      )}
     </div>
   );
 }

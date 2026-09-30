@@ -5,7 +5,8 @@ export type Route =
   | { name: "tenders" }
   | { name: "tender"; tenderId: string }
   | { name: "bid"; bidId: string }
-  | { name: "audit" };
+  | { name: "audit" }
+  | { name: "marked" };
 
 function parse(hash: string): Route {
   const path = hash.replace(/^#/, "").split("?")[0].replace(/\/+$/, "");
@@ -15,6 +16,7 @@ function parse(hash: string): Route {
   if (tender) return { name: "tender", tenderId: decodeURIComponent(tender[1]) };
   if (path === "/tenders") return { name: "tenders" };
   if (path === "/audit") return { name: "audit" };
+  if (path === "/marked") return { name: "marked" };
   return { name: "overview" };
 }
 
@@ -38,6 +40,7 @@ export const navigate = (href: string) => {
 export const overviewHref = "#/";
 export const tendersHref = "#/tenders";
 export const auditHref = "#/audit";
+export const markedHref = "#/marked";
 export const tenderAuditHref = (tenderId: string) => `#/audit?tender=${encodeURIComponent(tenderId)}`;
 export const hashParam = (key: string) => new URLSearchParams(window.location.hash.split("?")[1] ?? "").get(key);
 export const bidHref = (bidId: string) => `#/bids/${encodeURIComponent(bidId)}`;

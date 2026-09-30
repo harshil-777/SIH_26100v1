@@ -71,6 +71,21 @@ export type DashboardBid = {
   submitted_at: string;
   overall_score: Numeric | null;
   risk_level: RiskLevel | null;
+  marked: boolean;
+};
+
+export type MarkedBid = {
+  bid_id: string;
+  tender_id: string;
+  tender_title: string;
+  bidder_name: string;
+  enterprise_category: string | null;
+  status: BidStatus;
+  overall_score: Numeric | null;
+  risk_level: RiskLevel | null;
+  marked_by: string;
+  note: string | null;
+  marked_at: string;
 };
 
 export type BidDetail = {
@@ -257,6 +272,23 @@ function describeError(body: unknown): string | null {
   return null;
 }
 
+// DELETE /mark answers 204 with no body, which request() would fail to parse as JSON.
+async function request204(path: string, init: RequestInit): Promise<void> {
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, init);
+  } catch {
+    throw new ApiError(0, `Cannot reach the API at ${API_BASE_URL}. Is it running?`);
+  }
+  if (!response.ok) throw new ApiError(response.status, describeError(await response.json().catch(() => null)) ?? `HTTP ${response.status}`);
+}
+
+// Lets the sidebar's marked-bids count refresh wherever a bid gets marked or unmarked.
+export const MARKS_CHANGED = "bidauth:marks-changed";
+const notifyMarksChanged = () => {
+  window.dispatchEvent(new Event(MARKS_CHANGED));
+};
+
 const json = (body: unknown): RequestInit => ({
   method: "POST",
   headers: { "Content-Type": "application/json" },
@@ -278,6 +310,11 @@ export const api = {
   recentActivity: (limit = 20, tenderId?: string) =>
     request<RecentAuditEntry[]>(`/audit/recent?limit=${limit}${tenderId ? `&tender_id=${encodeURIComponent(tenderId)}` : ""}`),
   auditByTender: () => request<TenderAuditSummary[]>("/audit/tenders"),
+  listMarks: () => request<MarkedBid[]>("/marks"),
+  markBid: (bidId: string, body: { marked_by: string; note: string | null }) =>
+    request<{ bid_id: string }>(`/bids/${encodeURIComponent(bidId)}/mark`, { ...json(body), method: "PUT" }).then(notifyMarksChanged),
+  unmarkBid: (bidId: string) =>
+    request204(`/bids/${encodeURIComponent(bidId)}/mark`, { method: "DELETE" }).then(notifyMarksChanged),
   getJobStatus: (bidId: string) => request<JobStatus>(`/bids/${encodeURIComponent(bidId)}/status`),
 
   // 404 here just means the bid has never been verified -- not an error for the UI.

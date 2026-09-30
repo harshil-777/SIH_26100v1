@@ -5,7 +5,7 @@ from app.models.compliance import (
     DebarredEntity,
     VerificationResult,
 )
-from app.models.core import Bid, Bidder, Tender, User
+from app.models.core import Bid, Bidder, BidMark, Tender, User
 from app.models.documents import (
     BidDeclaration,
     BidDocumentSubmission,
@@ -20,6 +20,7 @@ __all__ = [
     "Tender",
     "Bidder",
     "Bid",
+    "BidMark",
     "DocumentType",
     "TenderDocumentRequirement",
     "BidDocumentSubmission",

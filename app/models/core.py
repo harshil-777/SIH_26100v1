@@ -115,3 +115,15 @@ class Bid(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
     status: Mapped[str] = mapped_column(Text, nullable=False, server_default="submitted")
+
+
+class BidMark(Base):
+    """An officer's "check this bid later" flag. A personal worklist marker, deliberately not
+    written to the audit log: it records no decision and changes nothing about the bid."""
+
+    __tablename__ = "bid_marks"
+
+    bid_id: Mapped[str] = mapped_column(Text, ForeignKey("bids.bid_id", ondelete="CASCADE"), primary_key=True)
+    marked_by: Mapped[str] = mapped_column(Text, nullable=False)
+    note: Mapped[str | None] = mapped_column(Text)
+    marked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())

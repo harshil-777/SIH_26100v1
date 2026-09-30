@@ -1,16 +1,18 @@
-import { FileStack, LayoutDashboard, Menu, ShieldCheck, X, type LucideIcon } from "lucide-react";
+import { Bookmark, FileStack, LayoutDashboard, Menu, ShieldCheck, X, type LucideIcon } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { GlobalSearch } from "@/components/layout/GlobalSearch";
-import { api } from "@/lib/api";
+import { api, MARKS_CHANGED } from "@/lib/api";
 import { initials } from "@/lib/format";
-import { auditHref, overviewHref, tendersHref, type Route } from "@/lib/router";
+import { readOfficer } from "@/lib/officer";
+import { auditHref, markedHref, overviewHref, tendersHref, type Route } from "@/lib/router";
 import { cn } from "@/lib/utils";
 
-type Section = "overview" | "tenders" | "audit";
+type Section = "overview" | "tenders" | "marked" | "audit";
 
 const NAV: { section: Section; label: string; href: string; icon: LucideIcon }[] = [
   { section: "overview", label: "Overview", href: overviewHref, icon: LayoutDashboard },
   { section: "tenders", label: "Tenders", href: tendersHref, icon: FileStack },
+  { section: "marked", label: "Marked bids", href: markedHref, icon: Bookmark },
   { section: "audit", label: "Audit trail", href: auditHref, icon: ShieldCheck },
 ];
 
@@ -64,7 +66,19 @@ export function LogoMark({ className }: { className?: string }) {
   );
 }
 
+function useMarkedCount(): number | null {
+  const [count, setCount] = useState<number | null>(null);
+  useEffect(() => {
+    const refresh = () => api.listMarks().then((marks) => setCount(marks.length), () => {});
+    refresh();
+    window.addEventListener(MARKS_CHANGED, refresh);
+    return () => window.removeEventListener(MARKS_CHANGED, refresh);
+  }, []);
+  return count;
+}
+
 function Sidebar({ active, onClose }: { active: Section; onClose?: () => void }) {
+  const markedCount = useMarkedCount();
   return (
     <div className="flex h-full flex-col bg-brand-950 text-slate-300">
       <div className="flex h-16 shrink-0 items-center gap-3 border-b border-white/[0.06] px-5">
@@ -104,6 +118,11 @@ function Sidebar({ active, onClose }: { active: Section; onClose?: () => void })
               {isActive && <span className="absolute inset-y-1.5 left-0 w-[3px] rounded-r-full bg-brand-400" aria-hidden />}
               <Icon className={cn("h-[18px] w-[18px]", isActive ? "text-brand-300" : "text-slate-500 group-hover:text-slate-300")} />
               {label}
+              {section === "marked" && markedCount !== null && markedCount > 0 && (
+                <span className="ml-auto rounded-md bg-brand-500/25 px-1.5 py-0.5 text-[11px] font-semibold tabular-nums text-brand-200">
+                  {markedCount}
+                </span>
+              )}
             </a>
           );
         })}
@@ -200,11 +219,3 @@ function TopBar({ onMenu }: { onMenu: () => void }) {
   );
 }
 
-// Same key DecisionPanel remembers the officer's name under.
-function readOfficer(): string {
-  try {
-    return localStorage.getItem("gem.officer") ?? "";
-  } catch {
-    return "";
-  }
-}

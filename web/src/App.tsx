@@ -1,6 +1,7 @@
 import { AppShell } from "@/components/layout/AppShell";
 import AuditPage from "@/pages/AuditPage";
 import BidDetail from "@/pages/BidDetail";
+import MarkedBids from "@/pages/MarkedBids";
 import Overview from "@/pages/Overview";
 import TenderDetail from "@/pages/TenderDetail";
 import TenderList from "@/pages/TenderList";
@@ -17,6 +18,8 @@ export default function App() {
         <TenderDetail key={route.tenderId} tenderId={route.tenderId} />
       ) : route.name === "tenders" ? (
         <TenderList />
+      ) : route.name === "marked" ? (
+        <MarkedBids />
       ) : route.name === "audit" ? (
         // Keyed on the full hash so #/audit?tender=... deep links re-select the tender.
         <AuditPage key={window.location.hash} />

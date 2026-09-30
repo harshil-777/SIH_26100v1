@@ -15,3 +15,4 @@ class DashboardBid(BaseModel):
     submitted_at: datetime
     overall_score: Decimal | None
     risk_level: str | None
+    marked: bool = False

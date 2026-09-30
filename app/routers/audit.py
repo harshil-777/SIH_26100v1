@@ -48,7 +48,7 @@ async def audit_by_tender(session: AsyncSession = Depends(get_session)) -> list[
 
 @router.get("/recent", response_model=list[RecentAuditEntry])
 async def recent_activity(
-    limit: int = Query(20, ge=1, le=200),
+    limit: int = Query(20, ge=1, le=1000),
     tender_id: str | None = None,
     session: AsyncSession = Depends(get_session),
 ) -> list[RecentAuditEntry]:

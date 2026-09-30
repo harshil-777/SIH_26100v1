@@ -1,15 +1,15 @@
-import { ArrowRight, BarChart3, Building2, CalendarClock, FileCheck2, FileSearch, Gauge, History, IndianRupee, ListChecks, Scale, Users } from "lucide-react";
+import { BarChart3, Building2, CalendarClock, FileCheck2, Gauge, History, IndianRupee, ListChecks, Scale, Users } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityFeed } from "@/components/ActivityFeed";
 import { RiskBadge } from "@/components/badges";
 import { PageHeader } from "@/components/PageHeader";
 import { ParticipantsTable } from "@/components/ParticipantsTable";
 import { StatCard } from "@/components/StatCard";
 import { EmptyState, ErrorState } from "@/components/States";
 import { Badge } from "@/components/ui/badge";
+import { LinkButton } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { api, ApiError, toNumber, type DashboardBid, type DocumentRequirement, type RecentAuditEntry, type TenderOut } from "@/lib/api";
+import { api, ApiError, toNumber, type DashboardBid, type DocumentRequirement, type TenderOut } from "@/lib/api";
 import { criterionLabel, deadlineLabel, formatDate, formatInr, formatInrCompact, formatScore, initials } from "@/lib/format";
 import { RISK_STYLE, riskRank } from "@/lib/risk";
 import { bidHref, overviewHref, tenderAuditHref, tendersHref } from "@/lib/router";
@@ -84,6 +84,11 @@ function TenderView({
       <PageHeader
         crumbs={crumbs}
         title={tender.title}
+        actions={
+          <LinkButton href={tenderAuditHref(tender.tender_id)} variant="outline">
+            <History className="h-4 w-4" aria-hidden /> Audit trail
+          </LinkButton>
+        }
         meta={
           <div className="flex flex-wrap items-center gap-2 text-sm text-slate-500">
             <span className="inline-flex items-center gap-1.5">
@@ -153,73 +158,36 @@ function TenderView({
         <ParticipantsTable bids={bids} />
       </section>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3 lg:items-start">
-        <Card className="lg:col-span-2">
-          <CardHeader
-            icon={<FileCheck2 className="h-4 w-4" />}
-            title="Required documents"
-            description="What every bidder must upload for this tender, and where each requirement comes from."
-          />
-          {requirements.length === 0 ? (
-            <EmptyState icon={ListChecks} title="No document requirements recorded" />
-          ) : (
-            <ul className="grid gap-px bg-slate-100 sm:grid-cols-2">
-              {requirements.map((req, i) => (
-                <li
-                  key={req.requirement_id}
-                  // An odd count would otherwise leave an empty grey cell showing through the gap-px grid.
-                  className={cn("bg-white px-5 py-4", requirements.length % 2 === 1 && i === requirements.length - 1 && "sm:col-span-2")}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="text-sm font-medium text-slate-900">{req.buyer_label ?? req.document_type}</div>
-                    <Badge tone={req.mandatory ? "danger" : "neutral"}>{req.mandatory ? "Mandatory" : "Conditional"}</Badge>
-                  </div>
-                  {req.notes && <p className="mt-1 text-[13px] leading-snug text-slate-500">{req.notes}</p>}
-                  <div className="mt-2 text-xs text-slate-400">
-                    Source: {SOURCE_LABEL[req.requirement_source] ?? req.requirement_source.replace(/_/g, " ")}
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Card>
-        <TenderActivity tenderId={tender.tender_id} />
-      </div>
-    </div>
-  );
-}
-
-// This tender's slice of the audit trail; the full, paged version lives on the audit page.
-function TenderActivity({ tenderId }: { tenderId: string }) {
-  const [entries, setEntries] = useState<RecentAuditEntry[] | null>(null);
-  useEffect(() => {
-    api.recentActivity(6, tenderId).then(setEntries, () => setEntries([]));
-  }, [tenderId]);
-  return (
-    <Card className="h-fit">
-      <CardHeader
-        icon={<History className="h-4 w-4" />}
-        title="Tender audit trail"
-        action={
-          <a href={tenderAuditHref(tenderId)} className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[13px] font-medium text-brand-700 hover:bg-brand-50">
-            Full trail <ArrowRight className="h-3.5 w-3.5" aria-hidden />
-          </a>
-        }
-      />
-      <div className="px-5 py-5">
-        {entries === null ? (
-          <div className="space-y-4">
-            {Array.from({ length: 4 }, (_, i) => (
-              <Skeleton key={i} className="h-10 w-full" />
-            ))}
-          </div>
-        ) : entries.length === 0 ? (
-          <EmptyState icon={FileSearch} title="No activity yet" />
+      <Card>
+        <CardHeader
+          icon={<FileCheck2 className="h-4 w-4" />}
+          title="Required documents"
+          description="What every bidder must upload for this tender, and where each requirement comes from."
+        />
+        {requirements.length === 0 ? (
+          <EmptyState icon={ListChecks} title="No document requirements recorded" />
         ) : (
-          <ActivityFeed entries={entries} dense />
+          <ul className="grid gap-px bg-slate-100 sm:grid-cols-2">
+            {requirements.map((req, i) => (
+              <li
+                key={req.requirement_id}
+                // An odd count would otherwise leave an empty grey cell showing through the gap-px grid.
+                className={cn("bg-white px-5 py-4", requirements.length % 2 === 1 && i === requirements.length - 1 && "sm:col-span-2")}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="text-sm font-medium text-slate-900">{req.buyer_label ?? req.document_type}</div>
+                  <Badge tone={req.mandatory ? "danger" : "neutral"}>{req.mandatory ? "Mandatory" : "Conditional"}</Badge>
+                </div>
+                {req.notes && <p className="mt-1 text-[13px] leading-snug text-slate-500">{req.notes}</p>}
+                <div className="mt-2 text-xs text-slate-400">
+                  Source: {SOURCE_LABEL[req.requirement_source] ?? req.requirement_source.replace(/_/g, " ")}
+                </div>
+              </li>
+            ))}
+          </ul>
         )}
-      </div>
-    </Card>
+      </Card>
+    </div>
   );
 }
 
