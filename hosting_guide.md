@@ -89,6 +89,19 @@ This prints your live URL — ours came out as `https://bid-auth-production.up.r
 `railway init`'s project name becomes the subdomain. That's what you'll use as
 `VITE_API_BASE_URL` in step 3.
 
+**First time only, strongly recommended:** run the service in the region nearest the database.
+The Supabase database is in Seoul (`ap-northeast-2`); Railway's closest region is Singapore. Every
+verification makes dozens of sequential database queries, so this roughly halves their cost:
+```bash
+cd deploy/railway/_build
+railway service list --json | grep -A3 '"regions"'   # note the current region's name, e.g. "sfo"
+railway scale southeast-asia=1 sfo=0                  # replace sfo with whatever name it showed
+```
+Gotcha: the existing region may be listed under an ID like `sfo` rather than the `us-west` alias,
+and `railway scale southeast-asia=1 us-west=0` would then *add* a second replica (double cost)
+instead of moving the one you have. Check `railway service list --json` afterwards shows exactly
+one replica.
+
 **Redeploying later:** just run `./deploy/deploy_railway.sh` again.
 
 ## 2B. Deploy the backend — Google Cloud Run (needs a card, but free)
@@ -153,6 +166,22 @@ into a tender, then a bidder, to see the full detail page (score, documents, aud
 recommendation), and try "Run verification" on a bid. It'll take a few seconds longer than a
 local run would (whole pipeline running inline per request, plus a cold start if the service had
 scaled to zero/gone idle) but should complete and show a result with no manual refresh needed.
+
+## 5. Optional: load the larger demo dataset
+
+The base fixtures have only 1–3 bids per tender. `WORKING DOCUMENTS/demo_bids/` adds 57 more
+(9–14 per tender) with a realistic mix of clean bids and real defects. To load them into the
+database (from the repo root, with `.env` present):
+
+```bash
+.venv/Scripts/python -m app.db.seed_demo      # Windows; use .venv/bin/python on macOS/Linux
+```
+
+It only *adds* rows and never wipes anything, then scores every new bid through the real pipeline
+and records some officer decisions. It takes a while (each bid is a full verification). Skip it if
+the database already shows 69 bids across the six tenders — it has already been loaded. To start
+the demo bids over from scratch (removes only them, then loads and scores them again):
+`python -m app.db.seed_demo --reset`.
 
 ## Why no background worker (Celery/Redis)
 
