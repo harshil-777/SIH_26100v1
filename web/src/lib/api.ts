@@ -199,8 +199,19 @@ export type AuditVerification = {
   valid: boolean;
   chains_checked: number;
   entries_checked: number;
-  breaks: { bid_id: string | null; log_id: number; problem: string }[];
+  breaks: { bid_id: string | null; tender_id: string | null; log_id: number; problem: string }[];
   checked_at: string;
+};
+
+export type TenderAuditSummary = {
+  tender_id: string;
+  title: string;
+  department: string;
+  bid_count: number;
+  entry_count: number;
+  verification_count: number;
+  decision_count: number;
+  last_activity_at: string | null;
 };
 
 export type JobStatus = {
@@ -264,7 +275,9 @@ export const api = {
   getDocuments: (bidId: string) => request<BidDocument[]>(`/bids/${encodeURIComponent(bidId)}/documents`),
   getAuditLog: (bidId: string) => request<AuditLog>(`/bids/${encodeURIComponent(bidId)}/audit-log`),
   verifyAuditLog: () => request<AuditVerification>("/audit/verify"),
-  recentActivity: (limit = 20) => request<RecentAuditEntry[]>(`/audit/recent?limit=${limit}`),
+  recentActivity: (limit = 20, tenderId?: string) =>
+    request<RecentAuditEntry[]>(`/audit/recent?limit=${limit}${tenderId ? `&tender_id=${encodeURIComponent(tenderId)}` : ""}`),
+  auditByTender: () => request<TenderAuditSummary[]>("/audit/tenders"),
   getJobStatus: (bidId: string) => request<JobStatus>(`/bids/${encodeURIComponent(bidId)}/status`),
 
   // 404 here just means the bid has never been verified -- not an error for the UI.

@@ -5,8 +5,20 @@ from pydantic import BaseModel
 
 class ChainBreakOut(BaseModel):
     bid_id: str | None
+    tender_id: str | None = None
     log_id: int
     problem: str
+
+
+class TenderAuditSummary(BaseModel):
+    tender_id: str
+    title: str
+    department: str
+    bid_count: int
+    entry_count: int
+    verification_count: int
+    decision_count: int
+    last_activity_at: datetime | None
 
 
 class RecentAuditEntry(BaseModel):

@@ -34,8 +34,11 @@ COPY ml_weights ./ml_weights
 COPY ["WORKING DOCUMENTS", "./WORKING DOCUMENTS"]
 RUN mkdir -p /app/storage
 
+# DB_POOL_SIZE: this image is API-only (no Celery worker running tasks in fresh event loops),
+# so it can safely keep database connections open between requests.
 ENV ML_MODELS_ENABLED=true \
-    SYNC_PIPELINE=true
+    SYNC_PIPELINE=true \
+    DB_POOL_SIZE=5
 # ML_EXTRACTION_MODEL / ML_RISK_MODEL / ML_RECOMMENDATION_MODEL are set by deploy_cloudrun.sh
 # at deploy time (pointing at ml_weights/... ) only when the weights were actually baked in --
 # left unset here so the Hugging Face fallback still works when they weren't.

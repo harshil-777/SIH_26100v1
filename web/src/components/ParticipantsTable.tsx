@@ -9,28 +9,17 @@ import { RISK_KEYS, RISK_STYLE, scoreColor, type RiskKey } from "@/lib/risk";
 import { bidHref, navigate } from "@/lib/router";
 import { cn } from "@/lib/utils";
 
-export type StatusFilter = BidStatus | "awaiting" | "all";
-export type RiskFilter = RiskKey | "flagged" | "all";
+type StatusFilter = BidStatus | "awaiting" | "all";
+type RiskFilter = RiskKey | "all";
 type SortKey = "default" | "bidder" | "score" | "submitted";
 
 const AWAITING = new Set<BidStatus>(["submitted", "under_review"]);
 
-const riskMatches = (filter: RiskFilter, key: RiskKey) =>
-  filter === "all" || filter === key || (filter === "flagged" && (key === "High" || key === "Non-Compliant"));
+const riskMatches = (filter: RiskFilter, key: RiskKey) => filter === "all" || filter === key;
 
-export function ParticipantsTable({
-  bids,
-  showTenderColumn = false,
-  initialStatus = "all",
-  initialRisk = "all",
-}: {
-  bids: DashboardBid[];
-  showTenderColumn?: boolean;
-  initialStatus?: StatusFilter;
-  initialRisk?: RiskFilter;
-}) {
-  const [status, setStatus] = useState<StatusFilter>(initialStatus);
-  const [risk, setRisk] = useState<RiskFilter>(initialRisk);
+export function ParticipantsTable({ bids }: { bids: DashboardBid[] }) {
+  const [status, setStatus] = useState<StatusFilter>("all");
+  const [risk, setRisk] = useState<RiskFilter>("all");
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" }>({ key: "default", dir: "asc" });
 
@@ -69,7 +58,6 @@ export function ParticipantsTable({
     setRisk("all");
     setQuery("");
   };
-  const columns = showTenderColumn ? 7 : 6;
 
   return (
     <div className="space-y-4">
@@ -105,7 +93,7 @@ export function ParticipantsTable({
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder={showTenderColumn ? "Search bidder, bid ID or tender" : "Search bidder or bid ID"}
+              placeholder="Search bidder or bid ID"
               className="h-9 w-full rounded-lg border border-slate-300 pl-9 pr-3 text-sm placeholder:text-slate-400 focus:border-brand-400 focus:outline-none focus:ring-4 focus:ring-brand-100"
             />
           </label>
@@ -147,7 +135,6 @@ export function ParticipantsTable({
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="truncate font-medium text-slate-900">{bid.bidder_name}</div>
-                      {showTenderColumn && <div className="truncate text-xs text-slate-500">{bid.tender_title}</div>}
                       <div className="font-mono text-[11px] text-slate-400">{bid.bid_id}</div>
                     </div>
                     <ScoreCell score={toNumber(bid.overall_score)} />
@@ -167,7 +154,6 @@ export function ParticipantsTable({
             <thead className="border-b border-slate-200 bg-slate-50/80 text-xs text-slate-500">
               <tr>
                 <SortHeader label="Bidder" active={sort.key === "bidder"} dir={sort.dir} onClick={() => toggleSort("bidder")} />
-                {showTenderColumn && <th className="px-4 py-3 font-medium">Tender</th>}
                 <SortHeader label="Score" active={sort.key === "score"} dir={sort.dir} onClick={() => toggleSort("score")} />
                 <th className="px-4 py-3 font-medium">Risk</th>
                 <th className="px-4 py-3 font-medium">Status</th>
@@ -195,12 +181,6 @@ export function ParticipantsTable({
                       </div>
                     </div>
                   </td>
-                  {showTenderColumn && (
-                    <td className="max-w-[18rem] px-4 py-3">
-                      <div className="truncate text-slate-800">{bid.tender_title}</div>
-                      <div className="font-mono text-xs text-slate-500">{bid.tender_id}</div>
-                    </td>
-                  )}
                   <td className="px-4 py-3">
                     <ScoreCell score={toNumber(bid.overall_score)} />
                   </td>
@@ -220,7 +200,7 @@ export function ParticipantsTable({
               ))}
               {visible.length === 0 && (
                 <tr>
-                  <td colSpan={columns}>
+                  <td colSpan={6}>
                     <EmptyState icon={SearchX} title="No bids match these filters">
                       {filtered && (
                         <button type="button" onClick={clearFilters} className="font-medium text-brand-700 hover:underline">

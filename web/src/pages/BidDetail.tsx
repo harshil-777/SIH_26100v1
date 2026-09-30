@@ -6,7 +6,7 @@ import { ErrorState } from "@/components/States";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatDateTime, formatScore, initials } from "@/lib/format";
 import { RISK_STYLE } from "@/lib/risk";
-import { bidsHref, overviewHref, tenderHref } from "@/lib/router";
+import { overviewHref, tenderHref, tendersHref } from "@/lib/router";
 import { AuditChain } from "@/components/detail/AuditChain";
 import { BidderProfile } from "@/components/detail/BidderProfile";
 import { CriteriaTable } from "@/components/detail/CriteriaTable";
@@ -99,7 +99,7 @@ export default function BidDetail({ bidId }: { bidId: string }) {
   if (error) {
     return (
       <div className="page-enter space-y-5">
-        <Breadcrumbs crumbs={[{ label: "Overview", href: overviewHref }, { label: "Bids", href: bidsHref }, { label: bidId }]} />
+        <Breadcrumbs crumbs={[{ label: "Overview", href: overviewHref }, { label: "Tenders", href: tendersHref }, { label: bidId }]} />
         <ErrorState
           title={error.status === 404 ? "Bid not found" : "Couldn't load this bid"}
           message={error.status === 404 ? `There is no bid with ID ${bidId}.` : error.message}
@@ -142,6 +142,7 @@ export default function BidDetail({ bidId }: { bidId: string }) {
       <Breadcrumbs
         crumbs={[
           { label: "Overview", href: overviewHref },
+          { label: "Tenders", href: tendersHref },
           { label: bid.tender.tender_id, href: tenderHref(bid.tender.tender_id) },
           { label: bid.bid_id },
         ]}

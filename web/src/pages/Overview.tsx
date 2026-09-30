@@ -16,7 +16,7 @@ import {
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityFeed } from "@/components/ActivityFeed";
 import { RiskBadge } from "@/components/badges";
-import { RiskBar, RiskDonut, RiskLegend } from "@/components/RiskVisuals";
+import { RiskBar, RiskKeyLegend } from "@/components/RiskVisuals";
 import { StatCard } from "@/components/StatCard";
 import { EmptyState, ErrorState } from "@/components/States";
 import { LinkButton } from "@/components/ui/button";
@@ -25,7 +25,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { api, toNumber, type DashboardBid, type RecentAuditEntry, type TenderListItem } from "@/lib/api";
 import { daysUntil, deadlineLabel, deadlineTone, formatInrCompact, formatScore, initials } from "@/lib/format";
 import { RISK_KEYS, riskRank, scoreColor, type RiskKey } from "@/lib/risk";
-import { auditHref, bidHref, bidsHref, reviewQueueHref, tenderHref, tendersHref } from "@/lib/router";
+import { auditHref, bidHref, tenderHref, tendersHref } from "@/lib/router";
 import { cn } from "@/lib/utils";
 
 type Data = { tenders: TenderListItem[]; bids: DashboardBid[] };
@@ -79,7 +79,7 @@ export default function Overview() {
       (stats?.awaiting ?? [])
         .slice()
         .sort((a, b) => riskRank(a.risk_level) - riskRank(b.risk_level) || (toNumber(a.overall_score) ?? 101) - (toNumber(b.overall_score) ?? 101))
-        .slice(0, 6),
+        .slice(0, 8),
     [stats],
   );
 
@@ -90,7 +90,7 @@ export default function Overview() {
 
   return (
     <div className="page-enter space-y-6">
-      <Hero stats={stats} />
+      <Hero />
 
       {error ? (
         <ErrorState title="Couldn't load the dashboard" message={error} onRetry={load} />
@@ -112,7 +112,6 @@ export default function Overview() {
               loading={!stats}
               value={data?.bids.length}
               hint={stats && `${stats.verified} verified · avg score ${stats.averageScore === null ? "—" : formatScore(Math.round(stats.averageScore * 10) / 10)}`}
-              href={bidsHref}
             />
             <StatCard
               label="Awaiting decision"
@@ -121,7 +120,6 @@ export default function Overview() {
               loading={!stats}
               value={stats?.awaiting.length}
               hint="Submitted or under review"
-              href={reviewQueueHref}
             />
             <StatCard
               label="Flagged bids"
@@ -130,7 +128,6 @@ export default function Overview() {
               loading={!stats}
               value={stats?.flagged}
               hint="High risk or non-compliant"
-              href={`${bidsHref}?risk=flagged`}
             />
           </div>
 
@@ -139,8 +136,7 @@ export default function Overview() {
               <CardHeader
                 icon={<ClipboardCheck className="h-4 w-4" />}
                 title="Review queue"
-                description="Bids awaiting an officer decision — highest risk first."
-                action={<ViewAll href={reviewQueueHref} label="Full queue" />}
+                description="Bids awaiting an officer decision across all tenders — highest risk first."
               />
               {!stats ? (
                 <ListSkeleton rows={5} />
@@ -160,22 +156,18 @@ export default function Overview() {
             <Card>
               <CardHeader
                 icon={<ShieldAlert className="h-4 w-4" />}
-                title="Risk distribution"
-                description="Latest compliance verdict for every bid."
+                title="Risk by tender"
+                description="How each tender's bids split across risk levels — most flagged first."
               />
               <div className="px-5 py-5">
-                {!stats ? (
-                  <div className="flex flex-col items-center gap-4">
-                    <Skeleton className="h-44 w-44 rounded-full" />
-                    <Skeleton className="h-24 w-full" />
+                {!data ? (
+                  <div className="space-y-5">
+                    {Array.from({ length: 5 }, (_, i) => (
+                      <Skeleton key={i} className="h-9 w-full" />
+                    ))}
                   </div>
                 ) : (
-                  <>
-                    <RiskDonut counts={stats.counts} centerLabel="bids" />
-                    <div className="mt-5">
-                      <RiskLegend counts={stats.counts} />
-                    </div>
-                  </>
+                  <TenderRiskList tenders={data.tenders} />
                 )}
               </div>
             </Card>
@@ -223,7 +215,7 @@ export default function Overview() {
   );
 }
 
-function Hero({ stats }: { stats: { open: TenderListItem[]; awaiting: DashboardBid[] } | null }) {
+function Hero() {
   const today = new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
   return (
     <section className="relative overflow-hidden rounded-2xl bg-brand-950 text-white shadow-lift">
@@ -246,14 +238,11 @@ function Hero({ stats }: { stats: { open: TenderListItem[]; awaiting: DashboardB
             trail.
           </p>
           <div className="mt-6 flex flex-wrap gap-3">
-            <LinkButton href={reviewQueueHref} variant="inverse" size="lg">
-              Open review queue
-              {stats && stats.awaiting.length > 0 && (
-                <span className="rounded-md bg-brand-100 px-1.5 py-0.5 text-xs font-semibold text-brand-800">{stats.awaiting.length}</span>
-              )}
-            </LinkButton>
-            <LinkButton href={tendersHref} variant="inverse-outline" size="lg">
+            <LinkButton href={tendersHref} variant="inverse" size="lg">
               Browse tenders <ArrowRight className="h-4 w-4" aria-hidden />
+            </LinkButton>
+            <LinkButton href={auditHref} variant="inverse-outline" size="lg">
+              View audit trail
             </LinkButton>
           </div>
         </div>
@@ -271,6 +260,33 @@ function Hero({ stats }: { stats: { open: TenderListItem[]; awaiting: DashboardB
         </div>
       </div>
     </section>
+  );
+}
+
+function TenderRiskList({ tenders }: { tenders: TenderListItem[] }) {
+  const flaggedShare = (t: TenderListItem) =>
+    t.participant_count ? (t.risk_counts["Non-Compliant"] + t.risk_counts.High) / t.participant_count : 0;
+  const sorted = tenders.slice().sort((a, b) => flaggedShare(b) - flaggedShare(a));
+  return (
+    <>
+      <RiskKeyLegend />
+      <ul className="mt-4 space-y-4">
+        {sorted.map((tender) => (
+          <li key={tender.tender_id}>
+            <a href={tenderHref(tender.tender_id)} className="group block">
+              <div className="flex items-baseline justify-between gap-3 text-sm">
+                <span className="truncate font-medium text-slate-800 group-hover:text-brand-700">{tender.title}</span>
+                <span className="shrink-0 text-xs tabular-nums text-slate-500">{tender.participant_count} bids</span>
+              </div>
+              <RiskBar counts={tender.risk_counts} className="mt-1.5 h-2.5" />
+              <div className="mt-1 text-xs text-slate-500">
+                {Math.round(flaggedShare(tender) * 100)}% flagged · {tender.risk_counts.Low} low risk
+              </div>
+            </a>
+          </li>
+        ))}
+      </ul>
+    </>
   );
 }
 

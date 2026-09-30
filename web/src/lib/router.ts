@@ -4,7 +4,6 @@ export type Route =
   | { name: "overview" }
   | { name: "tenders" }
   | { name: "tender"; tenderId: string }
-  | { name: "bids" }
   | { name: "bid"; bidId: string }
   | { name: "audit" };
 
@@ -15,7 +14,6 @@ function parse(hash: string): Route {
   const tender = path.match(/^\/tenders\/(.+)$/);
   if (tender) return { name: "tender", tenderId: decodeURIComponent(tender[1]) };
   if (path === "/tenders") return { name: "tenders" };
-  if (path === "/bids") return { name: "bids" };
   if (path === "/audit") return { name: "audit" };
   return { name: "overview" };
 }
@@ -39,9 +37,8 @@ export const navigate = (href: string) => {
 
 export const overviewHref = "#/";
 export const tendersHref = "#/tenders";
-export const bidsHref = "#/bids";
 export const auditHref = "#/audit";
-export const reviewQueueHref = "#/bids?status=awaiting";
+export const tenderAuditHref = (tenderId: string) => `#/audit?tender=${encodeURIComponent(tenderId)}`;
 export const hashParam = (key: string) => new URLSearchParams(window.location.hash.split("?")[1] ?? "").get(key);
 export const bidHref = (bidId: string) => `#/bids/${encodeURIComponent(bidId)}`;
 export const tenderHref = (tenderId: string) => `#/tenders/${encodeURIComponent(tenderId)}`;

@@ -1,22 +1,21 @@
-import { ClipboardList, FileStack, LayoutDashboard, Menu, ShieldCheck, X, type LucideIcon } from "lucide-react";
+import { FileStack, LayoutDashboard, Menu, ShieldCheck, X, type LucideIcon } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { GlobalSearch } from "@/components/layout/GlobalSearch";
 import { api } from "@/lib/api";
 import { initials } from "@/lib/format";
-import { auditHref, bidsHref, overviewHref, tendersHref, type Route } from "@/lib/router";
+import { auditHref, overviewHref, tendersHref, type Route } from "@/lib/router";
 import { cn } from "@/lib/utils";
 
-type Section = "overview" | "tenders" | "bids" | "audit";
+type Section = "overview" | "tenders" | "audit";
 
 const NAV: { section: Section; label: string; href: string; icon: LucideIcon }[] = [
   { section: "overview", label: "Overview", href: overviewHref, icon: LayoutDashboard },
   { section: "tenders", label: "Tenders", href: tendersHref, icon: FileStack },
-  { section: "bids", label: "Bids", href: bidsHref, icon: ClipboardList },
   { section: "audit", label: "Audit trail", href: auditHref, icon: ShieldCheck },
 ];
 
 const sectionOf = (route: Route): Section =>
-  route.name === "tender" ? "tenders" : route.name === "bid" ? "bids" : route.name;
+  route.name === "tender" || route.name === "bid" ? "tenders" : route.name;
 
 export function AppShell({ route, children }: { route: Route; children: ReactNode }) {
   const [drawerOpen, setDrawerOpen] = useState(false);

@@ -8,7 +8,7 @@ import { bidHref } from "@/lib/router";
 import { cn } from "@/lib/utils";
 
 // Whole-log integrity check: the server recomputes every bid's hash chain on each request.
-export function AuditIntegrity() {
+export function AuditIntegrity({ onResult }: { onResult?: (result: AuditVerification) => void } = {}) {
   const [result, setResult] = useState<AuditVerification | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
@@ -17,13 +17,15 @@ export function AuditIntegrity() {
     setChecking(true);
     setError(null);
     try {
-      setResult(await api.verifyAuditLog());
+      const verification = await api.verifyAuditLog();
+      setResult(verification);
+      onResult?.(verification);
     } catch (cause) {
       setError((cause as Error).message);
     } finally {
       setChecking(false);
     }
-  }, []);
+  }, [onResult]);
 
   useEffect(() => {
     check();

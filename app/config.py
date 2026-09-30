@@ -38,6 +38,10 @@ class Settings(BaseSettings):
     # and docker-compose (a real always-on worker) should leave this off.
     sync_pipeline: bool = False
 
+    # Connections kept open per API process (see app/db/session.py). 0 = no pooling, which the
+    # Celery worker and Supabase's transaction pooler both need; the API-only deploy images set it.
+    db_pool_size: int = 0
+
 
 @lru_cache
 def get_settings() -> Settings:

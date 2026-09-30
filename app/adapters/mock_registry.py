@@ -53,4 +53,10 @@ def get_registry() -> MockPortalRegistry:
     data_dir = get_settings().seed_data_dir
     payload = json.loads((data_dir / "dummy_mock_portal_responses.json").read_text(encoding="utf-8"))
     bidders_by_id = {entry["bidder_id"]: entry for entry in payload["bidders"]}
+    # Optional larger demo set (scripts/generate_demo_bids.py). Its bidder IDs (G###) never
+    # collide with the base fixture's (B###), so the base scenarios are served unchanged.
+    demo = data_dir / "demo_bids" / "portal_responses.json"
+    if demo.exists():
+        for entry in json.loads(demo.read_text(encoding="utf-8"))["bidders"]:
+            bidders_by_id.setdefault(entry["bidder_id"], entry)
     return MockPortalRegistry(bidders_by_id)
