@@ -16,16 +16,16 @@ import {
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityFeed } from "@/components/ActivityFeed";
 import { RiskBadge, StatusBadge } from "@/components/badges";
-import { RiskDonut, RiskLegend } from "@/components/RiskVisuals";
+import { RiskBar } from "@/components/RiskVisuals";
 import { StatCard } from "@/components/StatCard";
 import { EmptyState, ErrorState } from "@/components/States";
 import { LinkButton } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { api, toNumber, type DashboardBid, type MarkedBid, type RecentAuditEntry } from "@/lib/api";
+import { api, toNumber, type DashboardBid, type MarkedBid, type RecentAuditEntry, type TenderListItem } from "@/lib/api";
 import { formatRelative, formatScore, initials } from "@/lib/format";
-import { RISK_KEYS, riskRank, scoreColor, type RiskKey } from "@/lib/risk";
-import { auditHref, bidHref, markedHref, tendersHref } from "@/lib/router";
+import { RISK_KEYS, riskRank, RISK_STYLE, scoreColor, type RiskKey } from "@/lib/risk";
+import { auditHref, bidHref, markedHref, tenderHref, tendersHref } from "@/lib/router";
 import { cn } from "@/lib/utils";
 
 const AWAITING = new Set(["submitted", "under_review"]);
@@ -39,13 +39,20 @@ const PILLARS = [
 
 export default function Overview() {
   const [bids, setBids] = useState<DashboardBid[] | null>(null);
+  const [tenders, setTenders] = useState<TenderListItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [marks, setMarks] = useState<MarkedBid[] | null>(null);
   const [activity, setActivity] = useState<RecentAuditEntry[] | null>(null);
 
   const load = useCallback(() => {
     setError(null);
-    api.listBids().then(setBids, (cause: Error) => setError(cause.message));
+    Promise.all([api.listBids(), api.listTenders()]).then(
+      ([bidRows, tenderRows]) => {
+        setBids(bidRows);
+        setTenders(tenderRows);
+      },
+      (cause: Error) => setError(cause.message),
+    );
     // Separate so a failure in either only empties its own card rather than the whole page.
     api.listMarks().then(setMarks, () => setMarks([]));
     api.recentActivity(60).then(setActivity, () => setActivity([]));
@@ -68,14 +75,21 @@ export default function Overview() {
     };
   }, [bids]);
 
-  const queue = useMemo(
-    () =>
-      (stats?.awaiting ?? [])
-        .slice()
-        .sort((a, b) => riskRank(a.risk_level) - riskRank(b.risk_level) || (toNumber(a.overall_score) ?? 101) - (toNumber(b.overall_score) ?? 101))
-        .slice(0, 8),
-    [stats],
-  );
+  // Grouped by tender, worst-risk tender first; within a tender, worst-risk bid first.
+  const queueByTender = useMemo(() => {
+    if (!stats) return [];
+    const groups = new Map<string, { tenderId: string; tenderTitle: string; bids: DashboardBid[] }>();
+    for (const bid of stats.awaiting) {
+      const group = groups.get(bid.tender_id) ?? { tenderId: bid.tender_id, tenderTitle: bid.tender_title, bids: [] };
+      group.bids.push(bid);
+      groups.set(bid.tender_id, group);
+    }
+    const sortBids = (a: DashboardBid, b: DashboardBid) =>
+      riskRank(a.risk_level) - riskRank(b.risk_level) || (toNumber(a.overall_score) ?? 101) - (toNumber(b.overall_score) ?? 101);
+    return Array.from(groups.values())
+      .map((group) => ({ ...group, bids: group.bids.slice().sort(sortBids) }))
+      .sort((a, b) => riskRank(a.bids[0].risk_level) - riskRank(b.bids[0].risk_level) || b.bids.length - a.bids.length);
+  }, [stats]);
 
   // One row per bid: its latest audit event, rather than a stream of events.
   const latestPerBid = useMemo(() => {
@@ -118,38 +132,34 @@ export default function Overview() {
               <CardHeader
                 icon={<ClipboardCheck className="h-4 w-4" />}
                 title="Review queue"
-                description="Bids awaiting an officer decision — highest risk first."
+                description="Bids awaiting an officer decision, grouped by tender — worst risk first."
               />
               {!stats ? (
                 <ListSkeleton rows={6} />
-              ) : queue.length === 0 ? (
+              ) : queueByTender.length === 0 ? (
                 <EmptyState icon={ClipboardCheck} title="All caught up">
                   Every bid has an officer decision on record.
                 </EmptyState>
               ) : (
-                <ul className="divide-y divide-slate-100">
-                  {queue.map((bid) => (
-                    <QueueRow key={bid.bid_id} bid={bid} />
+                <div className="divide-y divide-slate-100">
+                  {queueByTender.map((group) => (
+                    <TenderQueueGroup key={group.tenderId} group={group} />
                   ))}
-                </ul>
+                </div>
               )}
             </Card>
 
             <Card>
-              <CardHeader icon={<ShieldAlert className="h-4 w-4" />} title="Bid risk distribution" description="Latest compliance verdict for every bid." />
+              <CardHeader icon={<ShieldAlert className="h-4 w-4" />} title="Risk by tender" description="How each tender's bids split across risk levels — most flagged first." />
               <div className="px-5 py-5">
-                {!stats ? (
-                  <div className="flex flex-col items-center gap-4">
-                    <Skeleton className="h-44 w-44 rounded-full" />
-                    <Skeleton className="h-28 w-full" />
+                {!tenders ? (
+                  <div className="space-y-5">
+                    {Array.from({ length: 6 }, (_, i) => (
+                      <Skeleton key={i} className="h-9 w-full" />
+                    ))}
                   </div>
                 ) : (
-                  <>
-                    <RiskDonut counts={stats.counts} centerLabel="bids" />
-                    <div className="mt-5">
-                      <RiskLegend counts={stats.counts} />
-                    </div>
-                  </>
+                  <TenderRiskList tenders={tenders} />
                 )}
               </div>
             </Card>
@@ -260,38 +270,6 @@ function ScoreMeter({ score }: { score: number | null }) {
   );
 }
 
-// Bid first: bidder and bid ID lead; the tender is only a small reference tag.
-function QueueRow({ bid }: { bid: DashboardBid }) {
-  return (
-    <li>
-      <a href={bidHref(bid.bid_id)} className="group flex items-center gap-4 px-5 py-3.5 transition hover:bg-slate-50">
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100 text-sm font-semibold text-slate-600">
-          {initials(bid.bidder_name)}
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-medium text-slate-900">{bid.bidder_name}</span>
-          <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
-            <span className="font-mono">{bid.bid_id}</span>
-            <span className="rounded bg-slate-100 px-1.5 py-px font-mono text-[11px] text-slate-500" title={bid.tender_title}>
-              {bid.tender_id}
-            </span>
-          </span>
-          <span className="mt-1.5 flex gap-1.5 sm:hidden">
-            <RiskBadge risk={bid.risk_level} />
-          </span>
-        </span>
-        <span className="hidden w-32 sm:block">
-          <ScoreMeter score={toNumber(bid.overall_score)} />
-        </span>
-        <span className="hidden sm:inline-flex">
-          <RiskBadge risk={bid.risk_level} />
-        </span>
-        <ChevronRight className="h-4 w-4 shrink-0 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-slate-500" aria-hidden />
-      </a>
-    </li>
-  );
-}
-
 function MarkedRow({ mark }: { mark: MarkedBid }) {
   return (
     <li>
@@ -321,6 +299,80 @@ function MarkedRow({ mark }: { mark: MarkedBid }) {
         <ChevronRight className="h-4 w-4 shrink-0 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-slate-500" aria-hidden />
       </a>
     </li>
+  );
+}
+
+function TenderQueueGroup({ group }: { group: { tenderId: string; tenderTitle: string; bids: DashboardBid[] } }) {
+  const SHOWN = 3;
+  const visible = group.bids.slice(0, SHOWN);
+  const extra = group.bids.length - visible.length;
+  return (
+    <div className="px-5 py-3.5">
+      <a href={tenderHref(group.tenderId)} className="group flex items-baseline justify-between gap-3">
+        <span className="truncate text-sm font-semibold text-slate-900 group-hover:text-brand-700">{group.tenderTitle}</span>
+        <span className="shrink-0 text-xs font-medium text-amber-700">
+          {group.bids.length} awaiting
+        </span>
+      </a>
+      <ul className="mt-2 space-y-2">
+        {visible.map((bid) => (
+          <li key={bid.bid_id}>
+            <a href={bidHref(bid.bid_id)} className="group/row flex items-center gap-3 rounded-lg px-2 py-1.5 -mx-2 transition hover:bg-slate-50">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-600">
+                {initials(bid.bidder_name)}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm text-slate-800 group-hover/row:text-brand-700">{bid.bidder_name}</span>
+                <span className="block truncate font-mono text-[11px] text-slate-400">{bid.bid_id}</span>
+              </span>
+              <span className="hidden w-28 sm:block">
+                <ScoreMeter score={toNumber(bid.overall_score)} />
+              </span>
+              <RiskBadge risk={bid.risk_level} />
+            </a>
+          </li>
+        ))}
+      </ul>
+      {extra > 0 && (
+        <a href={tenderHref(group.tenderId)} className="mt-2 inline-block text-[13px] font-medium text-brand-700 hover:underline">
+          +{extra} more in this tender
+        </a>
+      )}
+    </div>
+  );
+}
+
+function TenderRiskList({ tenders }: { tenders: TenderListItem[] }) {
+  const flaggedShare = (t: TenderListItem) =>
+    t.participant_count ? (t.risk_counts["Non-Compliant"] + t.risk_counts.High) / t.participant_count : 0;
+  const sorted = tenders.slice().sort((a, b) => flaggedShare(b) - flaggedShare(a));
+  return (
+    <>
+      <ul className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500">
+        {RISK_KEYS.map((key) => (
+          <li key={key} className="inline-flex items-center gap-1.5">
+            <span className={cn("h-2 w-2 rounded-sm", RISK_STYLE[key].dot)} aria-hidden />
+            {RISK_STYLE[key].label}
+          </li>
+        ))}
+      </ul>
+      <ul className="mt-4 space-y-4">
+        {sorted.map((tender) => (
+          <li key={tender.tender_id}>
+            <a href={tenderHref(tender.tender_id)} className="group block">
+              <div className="flex items-baseline justify-between gap-3 text-sm">
+                <span className="truncate font-medium text-slate-800 group-hover:text-brand-700">{tender.title}</span>
+                <span className="shrink-0 text-xs tabular-nums text-slate-500">{tender.participant_count} bids</span>
+              </div>
+              <RiskBar counts={tender.risk_counts} className="mt-1.5 h-2.5" />
+              <div className="mt-1 text-xs text-slate-500">
+                {Math.round(flaggedShare(tender) * 100)}% flagged · {tender.risk_counts.Low} low risk
+              </div>
+            </a>
+          </li>
+        ))}
+      </ul>
+    </>
   );
 }
 
